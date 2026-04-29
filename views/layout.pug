@@ -79,6 +79,10 @@ html(lang="en")
 				.collapse.navbar-collapse(id="navbarNav")
 					if (rpcClient)
 						ul.navbar-nav.me-auto
+							if (config.coin === "NMC")
+								li.nav-item
+									a.nav-link(href="./names")
+										span Names
 							if (false)
 								li.nav-item
 									a.nav-link(href="./about")

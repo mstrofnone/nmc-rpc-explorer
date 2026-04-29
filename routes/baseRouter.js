@@ -948,7 +948,12 @@ router.post("/search", function(req, res, next) {
 	let rawCaseQuery = req.body.query.trim();
 
 	req.session.query = req.body.query;
-	
+
+	// Namecoin name lookup: <namespace>/<label> (e.g. d/testls, id/m).
+	if (config.coin == "NMC" && /^[a-z0-9_]+\/[\x20-\x7e]{1,250}$/.test(rawCaseQuery)) {
+		return res.redirect("./name/" + encodeURIComponent(rawCaseQuery));
+	}
+
 	// xpub/ypub/zpub -> redirect: /xyzpub/XXX
 	if (rawCaseQuery.match(/^(xpub|ypub|zpub|Ypub|Zpub).*$/)) {
 		res.redirect(`./xyzpub/${rawCaseQuery}`);
@@ -2480,6 +2485,34 @@ router.get("/bitcoin.pdf", function(req, res, next) {
 // We register them unconditionally so the routes work in any environment,
 // but the views only link here when config.coin === "NMC".
 // ---------------------------------------------------------------------------
+
+router.get("/names", asyncHandler(async (req, res, next) => {
+	try {
+		const start = req.query.start || "";
+		const count = Math.min(parseInt(req.query.count || "50", 10) || 50, 200);
+
+		const rows = await nameApi.nameScan(start, count);
+
+		res.locals.nameRows = (rows || []).map((row) => ({
+			name: row.name,
+			valueRender: nameApi.renderNameValue(row.value, row.value_encoding),
+			height: row.height,
+			expires_in: row.expires_in,
+			expired: row.expired,
+			namespace: nameApi.splitNamespace(row.name),
+		}));
+		res.locals.nameStart = start;
+		res.locals.nameCount = count;
+
+		res.render("names");
+	} catch (err) {
+		utils.logError("namesIndex01", err);
+		res.locals.userMessageMarkdown = `Failed to scan names: ${err.message || err}`;
+		res.render("names");
+	}
+
+	next();
+}));
 
 router.get(/^\/name\/(.+)$/, asyncHandler(async (req, res, next) => {
 	try {
