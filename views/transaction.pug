@@ -183,6 +183,60 @@ block content
 							- var dtDays = dt / 60 / 60 / 24;
 							- daysDestroyed = daysDestroyed.plus(new Decimal(vout.value).times(dtDays));
 
+				- var __nameOps = [];
+				if (tx.vout && tx.vout.length)
+					each __vout, __i in tx.vout
+						if (__vout.scriptPubKey && __vout.scriptPubKey.nameOp)
+							- __nameOps.push({ vout: __i, op: __vout.scriptPubKey.nameOp, value: __vout.value });
+
+				if (__nameOps.length)
+					+contentSection(`Name operation${__nameOps.length === 1 ? "" : "s"} (${__nameOps.length})`)
+						each __entry in __nameOps
+							- var __op = __entry.op;
+							- var __isNew = __op.op === "name_new";
+							.mb-3.pb-3(class=__entry === __nameOps[__nameOps.length - 1] ? "" : "border-bottom")
+								.row.g-2.mb-2
+									.col-md-3
+										div.text-muted.small Operation
+										div
+											case __op.op
+												when "name_new"
+													span.badge.bg-secondary name_new
+												when "name_firstupdate"
+													span.badge.bg-success name_firstupdate
+												when "name_update"
+													span.badge.bg-primary name_update
+												default
+													span.badge.bg-dark= __op.op
+									.col-md-3
+										div.text-muted.small Output
+										div #{__entry.vout} (#{__entry.value} NMC)
+									if (!__isNew)
+										.col-md-6
+											div.text-muted.small Name
+											div
+												a.font-monospace(href=`./name/${encodeURIComponent(__op.name)}`)= __op.name
+								if (__isNew)
+									.row.g-2
+										.col-12
+											div.text-muted.small Pre-image hash
+											div.font-monospace.small.text-break= __op.hash || __op.rand
+											div.text-muted.small.mt-1 The actual name is hidden until name_firstupdate is broadcast (anti-frontrunning commitment).
+								else
+									- var __valueText = __op.value || "";
+									- var __isJson = false;
+									- var __pretty = __valueText;
+									- try { var __parsed = JSON.parse(__valueText); __pretty = JSON.stringify(__parsed, null, 2); __isJson = (typeof __parsed === "object" && __parsed !== null); } catch (_e) {}
+									.row.g-2
+										.col-12
+											div.text-muted.small Value
+												span.ms-2.small= __isJson ? "(JSON)" : (__op.value_encoding || "text")
+											pre.bg-body-tertiary.p-2.rounded-1.small.mb-0.text-break
+												code= __pretty
+								if (__op.rand && !__isNew)
+									div.text-muted.small.mt-2 rand: 
+										code.small= __op.rand
+
 				+contentSection("Technical Details", true, "txPageShowTechDetails")
 					if (isTxConfirmed)
 						- var blockRewardMax = coinConfig.blockRewardFunction(result.getblock.height, activeBlockchain);
