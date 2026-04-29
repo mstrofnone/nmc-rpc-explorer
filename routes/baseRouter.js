@@ -2486,6 +2486,48 @@ router.get("/bitcoin.pdf", function(req, res, next) {
 // but the views only link here when config.coin === "NMC".
 // ---------------------------------------------------------------------------
 
+// JSON snippet used by the homepage tile when running in NMC mode.
+router.get("/snippet/recent-name-ops", asyncHandler(async (req, res, next) => {
+	try {
+		const tipInfo = await coreApi.getBlockchainInfo();
+		const windowSize = Math.min(parseInt(req.query.blocks || "6", 10) || 6, 24);
+		const limit = Math.min(parseInt(req.query.limit || "15", 10) || 15, 50);
+
+		const heights = [];
+		for (let i = 0; i < windowSize; i++) heights.push(tipInfo.blocks - i);
+
+		const blocks = await coreApi.getBlocksByHeight(heights);
+		const txids = [];
+		for (const b of blocks) {
+			if (!b || !Array.isArray(b.tx)) continue;
+			// skip coinbase (first tx) — never carries name ops
+			for (let i = 1; i < b.tx.length && txids.length < 400; i++) {
+				txids.push(b.tx[i]);
+			}
+		}
+
+		const rawTxs = await coreApi.getRawTransactions(txids);
+		const ops = nameApi.collectNameOps(rawTxs).slice(0, limit);
+
+		res.json({
+			ops: ops.map((op) => ({
+				txid: op.txid,
+				vout: op.vout,
+				op: op.op,
+				name: op.name,
+				valuePreview: op.value
+					? String(op.value).slice(0, 80)
+					: null,
+			})),
+			window: windowSize,
+			tip: tipInfo.blocks,
+		});
+	} catch (err) {
+		utils.logError("recentNameOps01", err);
+		res.status(500).json({ error: err.message || String(err) });
+	}
+}));
+
 router.get("/names", asyncHandler(async (req, res, next) => {
 	try {
 		const start = req.query.start || "";
