@@ -1,4 +1,16 @@
-# BTC RPC Explorer
+# NMC RPC Explorer
+
+A Namecoin-flavoured fork of [btc-rpc-explorer](https://github.com/janoside/btc-rpc-explorer) with first-class support for `name_*` operations.
+
+When `BTCEXP_COIN=NMC` is set the explorer:
+
+- talks to your `namecoind` over RPC,
+- decodes `name_new`, `name_firstupdate` and `name_update` outputs (using namecoind's own `scriptPubKey.nameOp` field) and shows them on the transaction page,
+- exposes a `/name/<name>` view that pretty-prints the value (auto-detected JSON for `d/`/`id/` records),
+- ships a homepage "Recent Name Operations" tile,
+- adds a `/names` browser backed by `name_scan`.
+
+With `BTCEXP_COIN=BTC` the project still behaves identically to upstream `btc-rpc-explorer`.
 
 ## Self-Hosted Bitcoin explorer for everyone running [Bitcoin Core](https://github.com/bitcoin/bitcoin).
 

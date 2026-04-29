@@ -1,7 +1,7 @@
 {
-	"name": "btc-rpc-explorer",
+	"name": "nmc-rpc-explorer",
 	"version": "3.5.1",
-	"description": "Open-source, self-hosted Bitcoin explorer",
+	"description": "Open-source, self-hosted Namecoin/Bitcoin explorer (fork of btc-rpc-explorer)",
 	"private": false,
 	"bin": "bin/cli.js",
 	"scripts": {
