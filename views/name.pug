@@ -1,0 +1,86 @@
+extends layout
+
+block headContent
+	title Namecoin name #{nameQuery}
+
+block content
+	+pageTitle(`Name: ${nameQuery}`)
+
+	if (nameLookupError)
+		.alert.alert-warning
+			h5.mb-2 Name lookup failed
+			div.mb-2 No record was returned for #[code= nameQuery].
+			div.text-muted.small.font-monospace #{nameLookupError}
+	else
+		+contentSection("Summary")
+			.row.g-3
+				.col-md-6
+					div.text-muted.small Name
+					div.font-monospace= nameInfo.name
+				if (namespace && namespace.namespace)
+					.col-md-6
+						div.text-muted.small Namespace
+						div
+							code= namespace.namespace
+							if (namespaceLabel)
+								span.text-muted.ms-2 #{namespaceLabel}
+				.col-md-6
+					div.text-muted.small Registered at height
+					div
+						a(href=`./block-height/${nameInfo.height}`)= nameInfo.height
+				.col-md-6
+					div.text-muted.small Expires in
+					div
+						if (nameInfo.expired)
+							span.badge.bg-danger Expired
+						else
+							span= `${nameInfo.expires_in} blocks`
+				.col-md-6
+					div.text-muted.small Address
+					div
+						a(href=`./address/${nameInfo.address}`).font-monospace.small= nameInfo.address
+				.col-md-6
+					div.text-muted.small Last update tx
+					div
+						a(href=`./tx/${nameInfo.txid}`).font-monospace.small= nameInfo.txid
+
+		+contentSection("Value")
+			if (valueRender.kind === "json")
+				div.text-muted.small.mb-2 Decoded as JSON
+				pre.bg-body-tertiary.p-3.rounded-1.small.mb-0
+					code= valueRender.display
+			else if (valueRender.kind === "text")
+				div.text-muted.small.mb-2 #{nameInfo.value_encoding === "ascii" ? "ASCII" : "Text"}
+				pre.bg-body-tertiary.p-3.rounded-1.small.mb-0
+					code= valueRender.display
+			else if (valueRender.kind === "hex")
+				div.text-muted.small.mb-2 Hex (binary value)
+				pre.bg-body-tertiary.p-3.rounded-1.small.mb-0.text-break
+					code= valueRender.display
+			else
+				div.text-muted Empty value
+
+		if (nameHistory && nameHistory.length)
+			+contentSection(`History (${nameHistory.length})`)
+				.table-responsive
+					table.table.table-sm.mb-0
+						thead
+							tr
+								th Height
+								th Op
+								th Value
+								th(style="width:32%") Tx
+						tbody
+							each entry in nameHistory.slice().reverse()
+								tr
+									td
+										if (entry.height != null && entry.height >= 0)
+											a(href=`./block-height/${entry.height}`)= entry.height
+										else
+											span.text-muted —
+									td
+										span.font-monospace.small= entry.op || "name_update"
+									td.font-monospace.small.text-truncate(style="max-width:32rem")= (entry.value || "").slice(0, 200)
+									td
+										if (entry.txid)
+											a.font-monospace.small(href=`./tx/${entry.txid}`)= entry.txid.slice(0, 16) + "…"

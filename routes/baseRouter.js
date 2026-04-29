@@ -26,6 +26,7 @@ const config = require("./../app/config.js");
 const coreApi = require("./../app/api/coreApi.js");
 const addressApi = require("./../app/api/addressApi.js");
 const rpcApi = require("./../app/api/rpcApi.js");
+const nameApi = require("./../app/api/nameApi.js");
 const btcQuotes = require("./../app/coins/btcQuotes.js");
 
 const forceCsrf = csrfApi({ ignoreMethods: [] });
@@ -2472,5 +2473,43 @@ router.get("/bitcoin.pdf", function(req, res, next) {
 		next();
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Namecoin name routes (only useful when running against a Namecoin node).
+//
+// We register them unconditionally so the routes work in any environment,
+// but the views only link here when config.coin === "NMC".
+// ---------------------------------------------------------------------------
+
+router.get(/^\/name\/(.+)$/, asyncHandler(async (req, res, next) => {
+	try {
+		const rawName = decodeURIComponent(req.params[0]);
+		res.locals.nameQuery = rawName;
+
+		const nameInfo = await nameApi.nameShow(rawName);
+		res.locals.nameInfo = nameInfo;
+		res.locals.namespace = nameApi.splitNamespace(rawName);
+		res.locals.namespaceLabel = nameApi.namespaceLabel(res.locals.namespace.namespace);
+		res.locals.valueRender = nameApi.renderNameValue(
+			nameInfo.value,
+			nameInfo.value_encoding
+		);
+
+		// name_history is optional (requires -namehistory). Best-effort.
+		try {
+			res.locals.nameHistory = await nameApi.nameHistory(rawName);
+		} catch (_e) {
+			res.locals.nameHistory = null;
+		}
+
+		res.render("name");
+	} catch (err) {
+		res.locals.nameQuery = decodeURIComponent(req.params[0]);
+		res.locals.nameLookupError = err.message || String(err);
+		res.render("name");
+	}
+
+	next();
+}));
 
 module.exports = router;
