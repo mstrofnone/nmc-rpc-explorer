@@ -122,6 +122,99 @@ function namespaceLabel(ns) {
 	return KNOWN_NAMESPACES[ns] || `Namespace "${ns}"`;
 }
 
+// ---------------------------------------------------------------------------
+// ifa-0001 §"import" — import reference detection.
+// https://github.com/namecoin/proposals/blob/master/ifa-0001.md#import
+//
+// Spec-permitted shapes for the `import` field (all in JSON):
+//
+//   "import": "d/foo"                           // single name
+//   "import": ["d/foo"]                         // single name
+//   "import": ["d/foo", "selector"]             // single name + subdomain selector
+//   "import": [["d/foo"], ["d/bar", "sel"]]     // canonical: array of [name, selector?]
+//
+// The spec says importer items override imported items (including null,
+// which suppresses inherited fields). Resolution recurses up to 4 levels.
+// We don't resolve here — we just *detect* and *render* the references so
+// the explorer can surface them.
+// ---------------------------------------------------------------------------
+
+// Returns { imports: [{ name, selector|null }, ...], malformed: bool }
+// Always safe to call: returns { imports: [], malformed: false } if absent.
+function parseImports(parsedValue) {
+	const out = { imports: [], malformed: false };
+	if (!parsedValue || typeof parsedValue !== "object") return out;
+
+	const raw = parsedValue.import;
+	if (raw == null) return out;
+
+	// Short-hand 1: "import": "d/foo"
+	if (typeof raw === "string") {
+		out.imports.push({ name: raw, selector: null });
+		return out;
+	}
+
+	if (!Array.isArray(raw)) {
+		out.malformed = true;
+		return out;
+	}
+
+	// Short-hand 2/3: ["d/foo"] or ["d/foo", "selector"]
+	// Distinguish from canonical [["d/foo"], ...] by inspecting the first
+	// element: a string => short-hand; an array => canonical.
+	if (raw.length > 0 && typeof raw[0] === "string") {
+		const name = raw[0];
+		const selector = raw.length > 1 && typeof raw[1] === "string" ? raw[1] : null;
+		if (name) out.imports.push({ name, selector });
+		else out.malformed = true;
+		return out;
+	}
+
+	// Canonical: array of [name, selector?] tuples.
+	for (const entry of raw) {
+		if (!Array.isArray(entry) || entry.length === 0) {
+			out.malformed = true;
+			continue;
+		}
+		const name = entry[0];
+		if (typeof name !== "string" || !name) {
+			out.malformed = true;
+			continue;
+		}
+		const selector = entry.length > 1 && typeof entry[1] === "string"
+			? entry[1]
+			: null;
+		out.imports.push({ name, selector });
+	}
+	return out;
+}
+
+// Walk a parsed Namecoin record's `map` tree and collect every `import`
+// reference, including those nested under subdomains. Returns:
+//   [{ path: ["map","relay"], imports: [...], malformed: bool }, ...]
+// `path` is the canonical breadcrumb of the node carrying the import.
+function collectAllImports(parsedValue, _depth = 0) {
+	const results = [];
+	if (!parsedValue || typeof parsedValue !== "object" || _depth > 8) return results;
+
+	const top = parseImports(parsedValue);
+	if (top.imports.length || top.malformed) {
+		results.push({ path: [], ...top });
+	}
+
+	const map = parsedValue.map;
+	if (map && typeof map === "object" && !Array.isArray(map)) {
+		for (const [label, child] of Object.entries(map)) {
+			if (!child || typeof child !== "object") continue;
+			const childResults = collectAllImports(child, _depth + 1);
+			for (const r of childResults) {
+				results.push({ ...r, path: ["map", label, ...r.path] });
+			}
+		}
+	}
+	return results;
+}
+
 module.exports = {
 	nameShow,
 	nameHistory,
@@ -130,4 +223,6 @@ module.exports = {
 	renderNameValue,
 	splitNamespace,
 	namespaceLabel,
+	parseImports,
+	collectAllImports,
 };

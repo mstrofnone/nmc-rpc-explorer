@@ -2570,6 +2570,13 @@ router.get(/^\/name\/(.+)$/, asyncHandler(async (req, res, next) => {
 			nameInfo.value_encoding
 		);
 
+		// Detect ifa-0001 §"import" references nested anywhere in the value.
+		if (res.locals.valueRender.kind === "json" && res.locals.valueRender.parsed) {
+			res.locals.imports = nameApi.collectAllImports(res.locals.valueRender.parsed);
+		} else {
+			res.locals.imports = [];
+		}
+
 		// name_history is optional (requires -namehistory). Best-effort.
 		try {
 			res.locals.nameHistory = await nameApi.nameHistory(rawName);

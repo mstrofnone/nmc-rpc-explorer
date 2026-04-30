@@ -60,6 +60,45 @@ block content
 			else
 				div.text-muted Empty value
 
+		if (imports && imports.length)
+			+contentSection(`Imports (${imports.reduce((n, e) => n + e.imports.length, 0)})`)
+				p.text-muted.small.mb-3.
+					This record pulls boilerplate from another Namecoin name
+					per <a href="https://github.com/namecoin/proposals/blob/master/ifa-0001.md#import" target="_blank" rel="noopener">ifa-0001 §"import"</a>.
+					Importer items override imported items (including <code>null</code>,
+					which suppresses inherited fields). The spec mandates a
+					recursion limit of 4 levels.
+				.table-responsive
+					table.table.table-sm.mb-0
+						thead
+							tr
+								th(style="width:30%") At node
+								th Import target
+								th Subdomain selector
+						tbody
+							each entry in imports
+								each imp, idx in entry.imports
+									tr
+										td
+											if (idx === 0)
+												if (entry.path.length === 0)
+													span.text-muted (top level)
+												else
+													code.small= entry.path.join(".")
+											else
+												span.text-muted ↳
+										td
+											a.font-monospace(href=`./name/${encodeURIComponent(imp.name)}`)= imp.name
+										td
+											if (imp.selector)
+												code.small= imp.selector
+											else
+												span.text-muted —
+								if (entry.malformed)
+									tr
+										td(colspan="3")
+											span.badge.bg-warning Malformed import entry at <code>#{entry.path.join(".") || "(top)"}</code>
+
 		if (nameHistory && nameHistory.length)
 			+contentSection(`History (${nameHistory.length})`)
 				.table-responsive
