@@ -20,6 +20,7 @@ const config = require("./../app/config.js");
 const coreApi = require("./../app/api/coreApi.js");
 const addressApi = require("./../app/api/addressApi.js");
 const btcQuotes = require("./../app/coins/btcQuotes.js");
+const nmcQuotes = require("./../app/coins/nmcQuotes.js");
 
 
 
@@ -42,6 +43,19 @@ router.get("/quote/random", function(req, res, next) {
 
 		done = !utils.objHasProperty(res.locals.quote, "duplicateIndex");
 	}
+
+	res.render("snippets/quote");
+
+	next();
+});
+
+// Namecoin quote/fact of the page-load. Companion to /snippet/quote/random;
+// rendered as a second iframe above the upstream Bitcoin quote so that an
+// instance running on Namecoin (BTCEXP_COIN=NMC) shows a Namecoin quote and
+// the Bitcoin quote it's paired with.
+router.get("/quote/random/nmc", function(req, res, next) {
+	res.locals.quoteIndex = -1; // suppress "open this quote" link; nmcQuotes has no /quote/N route
+	res.locals.quote = nmcQuotes.items[utils.randomInt(0, nmcQuotes.items.length)];
 
 	res.render("snippets/quote");
 

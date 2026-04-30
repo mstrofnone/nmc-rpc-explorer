@@ -223,10 +223,17 @@ html(lang="en")
 
 							
 
+				//- On a Namecoin instance the search bar also accepts d/<name> (a .bit
+				//- domain), id/<name> (a NameID identity), or any other Namecoin name
+				//- in <namespace>/<label> form -- the POST /search handler in
+				//- routes/baseRouter.js redirects those to ./name/<name>.
+				- var searchPlaceholder = (config.coin === "NMC") ? "block height/hash, txid, address, d/name" : "block height/hash, txid, address"
+				- var searchPlaceholderShort = (config.coin === "NMC") ? "height/hash/txid/d/name..." : "height/hash/txid..."
+
 				form.form-inline.d-none.d-lg-inline(method="post", action="./search", style="width: 325px;")
 					input(type="hidden", name="_csrf", value=csrfToken)
 					.input-group
-						input.form-control(type="text", name="query", placeholder="block height/hash, txid, address", value=(query), autocapitalize="off", autocomplete="off", autocorrect="off", spellcheck="false")
+						input.form-control(type="text", name="query", placeholder=searchPlaceholder, value=(query), autocapitalize="off", autocomplete="off", autocorrect="off", spellcheck="false")
 						
 						button.btn.btn-primary(type="submit", aria-label="Search")
 							i.bi-search
@@ -234,7 +241,7 @@ html(lang="en")
 				form.form-inline.d-lg-none.w-100.mt-2.mt-md-0(method="post", action="./search")
 					input(type="hidden", name="_csrf", value=csrfToken)
 					.input-group
-						input.form-control(type="text", name="query", placeholder="height/hash/txid...", value=(query), autocapitalize="off", autocomplete="off", autocorrect="off", spellcheck="false")
+						input.form-control(type="text", name="query", placeholder=searchPlaceholderShort, value=(query), autocapitalize="off", autocomplete="off", autocorrect="off", spellcheck="false")
 						
 						button.btn.btn-primary(type="submit", aria-label="Search")
 							i.bi-search
@@ -268,6 +275,15 @@ html(lang="en")
 		footer.footer.border-top.border-primary.bg-header-footer.pt-3.pb-1.px-3.text-white(style="border-width: 5px !important;")
 			.container
 				if (!crawlerBot && global.rpcConnected)
+					//- On Namecoin instances we render a Namecoin quote/fact above the
+					//- upstream Bitcoin quote-of-the-day so visitors get the project's
+					//- own history and a sample of Namecoin facts; we do NOT replace
+					//- the Bitcoin quote, since this codebase is a fork of
+					//- janoside/btc-rpc-explorer and that's their attribution.
+					if (config.coin === "NMC")
+						.mb-2.mx-6
+							iframe(id="quoteIframeNmc", title="A Namecoin Quote / Fact", src="./snippet/quote/random/nmc", onload="iframeLoaded('quoteIframeNmc');", scrolling="no", height="0", style="width: 100%;")
+
 					.mb-4.mx-6
 						iframe(id="quoteIframe", title="A Bitcoin Quote of the Day", src="./snippet/quote/random", onload="iframeLoaded('quoteIframe');", scrolling="no", height="0", style="width: 100%;")
 
@@ -276,8 +292,19 @@ html(lang="en")
 				
 				.row.mt-4.mb-6
 					.col-lg-3
+						//- On Namecoin instances we surface this fork (namecoin/nmc-rpc-explorer)
+						//- as the primary "Project" entry, with the upstream
+						//- janoside/btc-rpc-explorer reframed as "Upstream Project"
+						//- right below it so credit + lineage stays visible.
+						if (config.coin === "NMC")
+							.mb-4
+								h6 Project
+
+								.ms-2
+									a.footer-link(href="https://github.com/namecoin/nmc-rpc-explorer") github.com/namecoin/nmc-rpc-explorer
+
 						.mb-4
-							h6 Project
+							h6 #{(config.coin === "NMC") ? "Upstream Project" : "Project"}
 
 							.ms-2
 								a.footer-link(href="https://github.com/janoside/btc-rpc-explorer") github.com/janoside/btc-rpc-explorer
@@ -343,8 +370,15 @@ html(lang="en")
 										a.text-white.mb-1.me-3(href="https://github.com/janoside/btc-rpc-explorer", title="View source code", data-bs-toggle="tooltip")
 											i.bi-git
 
-									a.text-danger.mb-1.me-3(href="https://donate.bitcoinexplorer.org", target="_blank", title="Support this project with a donation", data-bs-toggle="tooltip")
+									a.text-danger.mb-1.me-3(href="https://donate.bitcoinexplorer.org", target="_blank", title="Support btc-rpc-explorer (the upstream project) with a donation", data-bs-toggle="tooltip")
 										i.bi-heart-fill.text-danger
+
+								//- Namecoin donation heart, sits next to the upstream donate heart.
+								//- Blue (text-primary on Bootstrap) so it visually pairs with the
+								//- red Bitcoin one without being mistaken for it.
+								if (config.coin === "NMC")
+									a.text-primary.mb-1.me-3(href="https://www.namecoin.org/donate/", target="_blank", title="Donate to Namecoin", data-bs-toggle="tooltip")
+										i.bi-heart-fill.text-primary
 
 									a.text-white.mb-1(href="https://twitter.com/BitcoinExplorer", target="_blank", title="Follow @BitcoinExplorer on Twitter", data-bs-toggle="tooltip")
 										i.bi-twitter.text-twitter
