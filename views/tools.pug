@@ -11,24 +11,27 @@ mixin toolSections(sectionsData)
 					each sectionIndex in indexList
 						- var section = config.site.toolSections[sectionIndex];
 
-						+contentSection(section.name)
+						//- Skip empty sections (e.g. "Fun" on non-BTC chains where the
+						//- Bitcoin-specific tools have been filtered out in app/config.js).
+						if (section && section.items && section.items.length > 0)
+							+contentSection(section.name)
 
-							each itemIndex, itemIndexIndex in section.items
-								- var item = config.siteTools[itemIndex];
+								each itemIndex, itemIndexIndex in section.items
+									- var item = config.siteTools[itemIndex];
 
-								if (itemIndexIndex > 0)
-									hr
-								
-								.clearfix
-									.float-start.pt-1(style="width: 38px;")
-										i.fs-5(class=item.iconClass, style="width: 20px; margin-right: 10px;")
+									if (itemIndexIndex > 0)
+										hr
+									
+									.clearfix
+										.float-start.pt-1(style="width: 38px;")
+											i.fs-5(class=item.iconClass, style="width: 20px; margin-right: 10px;")
 
-									.float-start
-										div
-											a(href=item.url) #{item.name}
+										.float-start
+											div
+												a(href=item.url) #{item.name}
 
-								div.mt-n1(style="padding-left: 39px;")
-									p #{item.desc}
+									div.mt-n1(style="padding-left: 39px;")
+										p #{item.desc}
 
 
 

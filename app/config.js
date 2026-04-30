@@ -225,12 +225,18 @@ module.exports = {
 		},
 		valueDisplayMaxLargeDigits: 4,
 		prioritizedToolIdsList: [0, 10, 11, 9, 3, 4, 16, 12, 2, 5, 15, 1, 6, 7, 13, 8],
+		//- The "Fun" section (BTC Fun, Quotes, Holidays, Whitepaper Extractor) is
+		//- upstream Bitcoin-specific content. We keep the section slot present so
+		//- views/tools.pug and views/includes/tools-card.pug -- which hardcode
+		//- 5-section layouts like [[0,1],[2],[3,4]] -- don't index past the end
+		//- of the array. On non-BTC chains the section is rendered with an
+		//- empty `items` list, which the Tools dropdown / Tools card simply skip.
 		toolSections: [
 			{name: "Basics", items: [0, 2]},
 			{name: "Mempool", items: [4, 16, 5]},
 			{name: "Analysis", items: [9, 18, 10, 11, 12, 3, 20]},
 			{name: "Technical", items: [15, 6, 7, 1]},
-			{name: "Fun", items: [8, 17, 19, 13]},
+			{name: "Fun", items: (currentCoin === "BTC") ? [8, 17, 19, 13] : []},
 		]
 	},
 
@@ -256,18 +262,21 @@ module.exports = {
 	/* 11 */	{name:"Block Analysis", url:"./block-analysis", desc:"Summary analysis for all transactions in a block.", iconClass:"bi-chevron-double-down"},
 	/* 12 */	{name:"Difficulty History", url:"./difficulty-history", desc:"Details of difficulty changes over time.", iconClass:"bi-clock-history"},
 
-	/* 13 */	{name:"Whitepaper Extractor", url:"./bitcoin-whitepaper", desc:"Extract the Bitcoin whitepaper from data embedded within the blockchain.", iconClass:"bi-file-earmark-text"},
+	/* 13 */	{name:"Whitepaper Extractor", url:"./bitcoin-whitepaper", desc:`Extract the Bitcoin whitepaper from data embedded within the blockchain.`, iconClass:"bi-file-earmark-text"},
+	//- Whitepaper Extractor is Bitcoin-specific (the whitepaper is embedded in BTC chain data).
+	//- It is left in siteTools so /bitcoin-whitepaper still resolves on BTC mode, but is dropped
+	//- from the navigation toolSections above for non-BTC chains.
 	
 	/* 14 */	{name:"Predicted Blocks", url:"./predicted-blocks", desc:"View predicted future blocks based on the current mempool.", iconClass:"bi-arrow-right-circle"},
 
 	/* 15 */	{name:"API", url:`.${apiDocs.baseUrl}/docs`, desc:"View docs for the public API.", iconClass:"bi-braces-asterisk"},
 
 	/* 16 */	{name:"Next Block", url:"./next-block", desc:"View a prediction for the next block, based on the current mempool.", iconClass:"bi-minecart-loaded"},
-	/* 17 */	{name:"Quotes", url:"./quotes", desc:"Curated list of Bitcoin-related quotes.", iconClass:"bi-chat-quote"},
+	/* 17 */	{name:"Quotes", url:"./quotes", desc:`Curated list of ${coins[currentCoin].name}-related quotes.`, iconClass:"bi-chat-quote"},
 
 	/* 18 */	{name:"UTXO Set", url:"./utxo-set", desc:"View the latest UTXO Set.", iconClass:"bi-list-columns"},
 
-	/* 19 */	{name:"Holidays", url:"./holidays", desc:"Curated list of Bitcoin 'Holidays'.", iconClass:"bi-calendar-heart"},
+	/* 19 */	{name:"Holidays", url:"./holidays", desc:`Curated list of ${coins[currentCoin].name} 'Holidays'.`, iconClass:"bi-calendar-heart"},
 
 	/* 20 */	{name:"Next Halving", url:"./next-halving", desc:"Estimated details about the next halving.", iconClass:"bi-square-half"},
 	]
