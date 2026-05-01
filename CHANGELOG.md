@@ -1,3 +1,11 @@
+##### nmc-3.6.1
+###### 2026-05-02
+
+Force browser-tab favicon refresh.
+
+* Bump `package.json` version to `3.6.1` so the `?v=<cacheId>` query string baked into every static-asset URL (favicons, app CSS/JS, logos) changes. Browsers that cached the upstream Bitcoin-orange favicon under `?v=3.5.1` will now refetch the Namecoin coin glyph shipped in PR #21 (`feat(namecoin): replace Bitcoin-orange browser-tab favicons with Namecoin coin glyph`).
+* No code or asset changes — this is a cache-busting metadata bump only.
+
 ##### nmc-3.6.0
 ###### 2026-05-01
 
