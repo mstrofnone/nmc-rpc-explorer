@@ -1,3 +1,29 @@
+##### nmc-3.6.0
+###### 2026-05-01
+
+Namecoin coin module: surface name operations and identity, and rebrand the chrome.
+
+* **Mempool / name ops**
+	* New `/mempool-name-ops` view: every name operation currently in the mempool, bucketed by `name_firstupdate` / `name_update` / `name_new`, backed by `name_pending` (O(name-ops), not O(mempool size)).
+	* `/name/<name>` now shows a *Pending in mempool* panel for unconfirmed updates queued against that specific name.
+	* Homepage *Recent Name Operations* tile folds in pending mempool ops alongside the recent-blocks scan, with a `pending` badge.
+	* New *Pending Names* nav link (NMC mode only).
+* **Detect and pretty-render `import` references** between names per [ifa-0001 §"import"](https://github.com/namecoin/proposals/blob/master/ifa-0001.md#import). Detection only — no recursive RPC fetch. All four spec-permitted shapes accepted (canonical `[[name, sel?]]` plus three short-hands), reported with the carrying node's path breadcrumb.
+* **Link `id/` records and `d/<name>` to NameID + Nostr identities**:
+	* Typed key/value rendering of NameID fields (`name`, `email`, `www`, `bitcoin`, `tor`, `pgp`/`gpg` fingerprint, etc.).
+	* Nostr block detected in both shapes (single-identity `nostr.pubkey` and multi-identity `nostr.names` / `nostr.relays`).
+	* Each hex pubkey encoded to NIP-19 `npub` (bech32) and linked to njump.me.
+	* Implied `<localPart>@<label>.bit` NIP-05 identifiers rendered for `d/<name>` records.
+* **Latest blocks**
+	* New merge-mining-aware *Miner* column for Namecoin: scans the parent (Bitcoin) coinbase tag carried inside the AuxPow blob (`auxpow.tx.vin[0].coinbase`), then falls back to the NMC coinbase tag, then to the payout address. The match signal (parent coinbase tag, parent payout address, NMC coinbase tag, or NMC payout address) is surfaced in each row's tooltip.
+	* Hover the *Miner* column header for an info bar explaining how merge-mining works and how this column is calculated.
+	* Native value labels honour the active coin: `NMC`/`sat` instead of `BTC`/`sat` (`global.currencyTypes.btc` is re-labelled at boot when `BTCEXP_COIN !== "BTC"`).
+* **Branding**
+	* Top-left logo / favicon / PWA icon / share-preview / safari-pinned-tab SVGs swapped from the Bitcoin “₿” glyph to a Namecoin “N” on Namecoin brand-blue (`#1a78d8`).
+	* New blue-heart *Donate to Namecoin* button on the homepage hero, sitting between the upstream red-heart *Donate* and *@BitcoinExplorer*.
+* **Tx-stats infographic**
+	* Hover any `min/pt`, `hr/pt`, or `day/pt` badge on `/tx-stats` for an explanation of what the unit means, how it's calculated (`(last block time − first) / (n_points − 1)`), and what to read into values relative to the 10-minute target.
+
 ##### v3.5.1
 ###### 2025-07-02
 

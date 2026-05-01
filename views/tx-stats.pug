@@ -6,6 +6,18 @@ block headContent
 block content
 	+pageTitle("Transaction Stats")
 
+	//- Reusable mixin: the "min/pt" / "hr/pt" / "day/pt" units shown next to
+	//- each stats chart heading. They mean "minutes (or hours, or days) per
+	//- data point" — i.e. the average wall-clock distance between two
+	//- adjacent samples on the chart. For block-level stats this works out to
+	//- the average inter-block time across the chosen window, so it doubles
+	//- as a quick "how slow are blocks coming?" signal. The infographic below
+	//- is the tooltip surfaced on hover.
+	mixin minPtBadge(value, units, windowLabel)
+		- var unitWord = (units === "min/pt") ? "minutes" : ((units === "hr/pt") ? "hours" : "days")
+		- var titleHtml = "<b>" + units + " = " + unitWord + " per data point</b><br/>Each chart point covers the avg time between two consecutive blocks in the <em>" + windowLabel + "</em> window.<br/><br/><b>How it's calculated</b><br/><code>(last block time − first block time) / (number of points − 1)</code><br/>then converted to <code>min/pt</code>, <code>hr/pt</code>, or <code>day/pt</code> as appropriate for the window.<br/><br/><b>What to read into it</b><br/>• Steady &asymp; 10 min/pt — the network is hitting Bitcoin's target block time (Namecoin shares it via merge-mining).<br/>• &lt; 10 — hashrate caught up to the difficulty target faster than expected; difficulty rises next era.<br/>• &gt; 10 — hashrate fell behind; difficulty drops next era to compensate."
+		span.small.ms-2.border-dotted(title=titleHtml, data-bs-toggle="tooltip", data-bs-html="true") (#{value} #{units})
+
 	if (false)
 		pre
 			code.json #{JSON.stringify(txStatResults, null, 4)}
@@ -21,7 +33,7 @@ block content
 						.d-flex.flex-row
 							h6.text-card-highlight.fw-light.mb-3
 								span.text-uppercase Last ~24 Hrs
-								span.small.ms-2 (#{new Decimal(txStatsDay.avgTimespan).dividedBy(60).toDP(1)} min/pt)
+								+minPtBadge(new Decimal(txStatsDay.avgTimespan).dividedBy(60).toDP(1), "min/pt", "last 24 hours")
 						script var txCountDataDay = [];
 						each item, index in txStatsDay.txCounts
 							script txCountDataDay.push({x:#{item.x}, y:#{item.y}});
@@ -33,7 +45,7 @@ block content
 						.d-flex.flex-row
 							h6.text-card-highlight.fw-light.mb-3
 								span.text-uppercase Last ~7 Days
-								span.small.ms-2 (#{new Decimal(txStatsWeek.avgTimespan).dividedBy(60).toDP(1)} min/pt)
+								+minPtBadge(new Decimal(txStatsWeek.avgTimespan).dividedBy(60).toDP(1), "min/pt", "last 7 days")
 
 						script var txCountDataWeek = [];
 						each item, index in txStatsWeek.txCounts
@@ -46,7 +58,7 @@ block content
 						.d-flex.flex-row
 							h6.text-card-highlight.fw-light.mb-3
 								span.text-uppercase Last ~30 Days
-								span.small.ms-2 (#{new Decimal(txStatsMonth.avgTimespan).dividedBy(60).dividedBy(60).toDP(1)} hr/pt)
+								+minPtBadge(new Decimal(txStatsMonth.avgTimespan).dividedBy(60).dividedBy(60).toDP(1), "hr/pt", "last 30 days")
 
 						script var txCountDataMonth = [];
 						each item, index in txStatsMonth.txCounts
@@ -59,7 +71,7 @@ block content
 						.d-flex.flex-row
 							h6.text-card-highlight.fw-light.mb-3
 								span.text-uppercase Last ~365 Days
-								span.small.ms-2 (#{new Decimal(txStatsYear.avgTimespan).dividedBy(60).dividedBy(60).dividedBy(24).toDP(1)} day/pt)
+								+minPtBadge(new Decimal(txStatsYear.avgTimespan).dividedBy(60).dividedBy(60).dividedBy(24).toDP(1), "day/pt", "last 365 days")
 
 						script var txCountDataYear = [];
 						each item, index in txStatsYear.txCounts
@@ -72,7 +84,7 @@ block content
 						.d-flex.flex-row
 							h6.text-card-highlight.fw-light.mb-3
 								span.text-uppercase All Time
-								span.small.ms-2 (#{new Decimal(txStats.avgTimespan).dividedBy(60).dividedBy(60).dividedBy(24).toDP(1)} day/pt)
+								+minPtBadge(new Decimal(txStats.avgTimespan).dividedBy(60).dividedBy(60).dividedBy(24).toDP(1), "day/pt", "all time")
 
 						script var txCountDataAlltime = [];
 						each item, index in txStats.txCounts
@@ -94,7 +106,7 @@ block content
 						.d-flex.flex-row
 							h6.text-card-highlight.fw-light.mb-3
 								span.text-uppercase Last ~24 Hrs
-								span.small.ms-2 (#{new Decimal(txStatsDay.avgTimespan).dividedBy(60).toDP(1)} min/pt)
+								+minPtBadge(new Decimal(txStatsDay.avgTimespan).dividedBy(60).toDP(1), "min/pt", "last 24 hours")
 
 						script var txRateDataDay = [];
 						each item, index in txStatsDay.txRates
@@ -107,7 +119,7 @@ block content
 						.d-flex.flex-row
 							h6.text-card-highlight.fw-light.mb-3
 								span.text-uppercase Last ~7 Days
-								span.small.ms-2 (#{new Decimal(txStatsWeek.avgTimespan).dividedBy(60).toDP(1)} min/pt)
+								+minPtBadge(new Decimal(txStatsWeek.avgTimespan).dividedBy(60).toDP(1), "min/pt", "last 7 days")
 
 						script var txRateDataWeek = [];
 						each item, index in txStatsWeek.txRates
@@ -120,7 +132,7 @@ block content
 						.d-flex.flex-row
 							h6.text-card-highlight.fw-light.mb-3
 								span.text-uppercase Last ~30 Days
-								span.small.ms-2 (#{new Decimal(txStatsMonth.avgTimespan).dividedBy(60).dividedBy(60).toDP(1)} hr/pt)
+								+minPtBadge(new Decimal(txStatsMonth.avgTimespan).dividedBy(60).dividedBy(60).toDP(1), "hr/pt", "last 30 days")
 								
 						script var txRateDataMonth = [];
 						each item, index in txStatsMonth.txRates
@@ -133,7 +145,7 @@ block content
 						.d-flex.flex-row
 							h6.text-card-highlight.fw-light.mb-3
 								span.text-uppercase Last ~365 Days
-								span.small.ms-2 (#{new Decimal(txStatsYear.avgTimespan).dividedBy(60).dividedBy(60).dividedBy(24).toDP(1)} day/pt)
+								+minPtBadge(new Decimal(txStatsYear.avgTimespan).dividedBy(60).dividedBy(60).dividedBy(24).toDP(1), "day/pt", "last 365 days")
 
 						script var txRateDataYear = [];
 						each item, index in txStatsYear.txRates
@@ -146,7 +158,7 @@ block content
 						.d-flex.flex-row
 							h6.text-card-highlight.fw-light.mb-3
 								span.text-uppercase All Time
-								span.small.ms-2 (#{new Decimal(txStats.avgTimespan).dividedBy(60).dividedBy(60).dividedBy(24).toDP(1)} day/pt)
+								+minPtBadge(new Decimal(txStats.avgTimespan).dividedBy(60).dividedBy(60).dividedBy(24).toDP(1), "day/pt", "all time")
 
 						script var txRateDataAlltime = [];
 						each item, index in txStats.txRates
