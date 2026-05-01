@@ -44,6 +44,35 @@ block content
 					div
 						a(href=`./tx/${nameInfo.txid}`).font-monospace.small= nameInfo.txid
 
+		if (pendingForName && pendingForName.length)
+			+contentSection(`Pending in mempool (${pendingForName.length})`)
+				p.text-muted.small.mb-3.
+					This name has unconfirmed updates queued in the mempool.
+					Their effects haven't taken hold yet — the data above still
+					reflects the last confirmed state.
+				each entry in pendingForName
+					.mb-3.pb-3.border-bottom
+						.row.g-2.mb-2
+							.col-md-3
+								div.text-muted.small Operation
+								div
+									case entry.op
+										when "name_firstupdate"
+											span.badge.bg-success name_firstupdate
+										when "name_update"
+											span.badge.bg-primary name_update
+										when "name_new"
+											span.badge.bg-secondary name_new
+										default
+											span.badge.bg-dark= entry.op
+							.col-md-9
+								div.text-muted.small Tx
+								div
+									a.font-monospace.small(href=`./tx/${entry.txid}`)= entry.txid
+						if (entry.value)
+							pre.bg-body-tertiary.p-2.rounded-1.small.mb-0.text-break(style="max-height: 12rem; overflow: auto;")
+								code= entry.value
+
 		+contentSection("Value")
 			if (valueRender.kind === "json")
 				div.text-muted.small.mb-2 Decoded as JSON

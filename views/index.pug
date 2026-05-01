@@ -112,7 +112,8 @@ block content
 				div
 					+sectionTitle("Recent Name Operations")
 				div
-					a.small.ms-2(href="./names") Browse names &raquo;
+					a.small.ms-2(href="./mempool-name-ops") Mempool name ops &raquo;
+					a.small.ms-3(href="./names") Browse names &raquo;
 			+contentSection
 				div#index-recent-name-ops
 					div.text-muted.small Loading recent name ops…
@@ -163,28 +164,48 @@ block endOfBody
 			});
 		}
 
+		function escapeHtml(s) {
+			return String(s).replace(/[<>&]/g, function(c){return {"<":"&lt;",">":"&gt;","&":"&amp;"}[c];});
+		}
+
+		function renderNameOpRow(op, opts) {
+			var badgeColor = (op.op === "name_firstupdate") ? "bg-success"
+				: (op.op === "name_update") ? "bg-primary"
+				: (op.op === "name_new") ? "bg-secondary" : "bg-dark";
+			var pendingMark = opts && opts.pending
+				? '<span class="badge bg-warning text-dark ms-1" title="In mempool, not yet confirmed">pending</span>'
+				: '';
+			var nameCell = op.name
+				? '<a class="font-monospace small" href="./name/' + encodeURIComponent(op.name) + '">' + escapeHtml(op.name) + '</a>'
+				: '<span class="text-muted small">(name_new commitment)</span>';
+			var valuePreview = op.valuePreview
+				? '<code class="small">' + escapeHtml(op.valuePreview) + '</code>'
+				: '';
+			return '<tr>'
+				+ '<td><span class="badge ' + badgeColor + '">' + op.op + '</span>' + pendingMark + '</td>'
+				+ '<td>' + nameCell + '</td>'
+				+ '<td class="text-truncate" style="max-width:24rem">' + valuePreview + '</td>'
+				+ '<td><a class="font-monospace small" href="./tx/' + op.txid + '">' + op.txid.slice(0, 12) + '…</a></td>'
+				+ '</tr>';
+		}
+
 		function renderRecentNameOps(payload) {
 			var el = document.getElementById("index-recent-name-ops");
 			if (!el) return;
-			if (!payload || !payload.ops || !payload.ops.length) {
-				el.innerHTML = '<div class="text-muted small">No name operations in the last ' + (payload && payload.window || 6) + ' blocks.</div>';
+			var haveOps = payload && payload.ops && payload.ops.length;
+			var havePending = payload && payload.pending && payload.pending.length;
+			if (!haveOps && !havePending) {
+				el.innerHTML = '<div class="text-muted small">No name operations in the mempool or the last ' + (payload && payload.window || 6) + ' blocks.</div>';
 				return;
 			}
-			var rows = payload.ops.map(function(op) {
-				var nameCell = op.name
-					? '<a class="font-monospace small" href="./name/' + encodeURIComponent(op.name) + '">' + op.name + '</a>'
-					: '<span class="text-muted small">(name_new commitment)</span>';
-				var valuePreview = op.valuePreview
-					? '<code class="small">' + op.valuePreview.replace(/[<>&]/g, function(c){return {"<":"&lt;",">":"&gt;","&":"&amp;"}[c];}) + '</code>'
-					: '';
-				return '<tr>'
-					+ '<td><span class="badge bg-secondary">' + op.op + '</span></td>'
-					+ '<td>' + nameCell + '</td>'
-					+ '<td class="text-truncate" style="max-width:24rem">' + valuePreview + '</td>'
-					+ '<td><a class="font-monospace small" href="./tx/' + op.txid + '">' + op.txid.slice(0, 12) + '…</a></td>'
-					+ '</tr>';
-			}).join("");
-			el.innerHTML = '<div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Op</th><th>Name</th><th>Value</th><th>Tx</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+			var rows = (payload.pending || []).map(function(op) { return renderNameOpRow(op, {pending: true}); })
+				.concat((payload.ops || []).map(function(op) { return renderNameOpRow(op); }))
+				.join("");
+			var caption = '';
+			if (havePending) {
+				caption = '<div class="text-muted small mb-2">' + payload.pending.length + ' pending in mempool, ' + (haveOps ? payload.ops.length : 0) + ' confirmed in last ' + payload.window + ' blocks.</div>';
+			}
+			el.innerHTML = caption + '<div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Op</th><th>Name</th><th>Value</th><th>Tx</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
 		}
 
 		$(document).ready(function() {

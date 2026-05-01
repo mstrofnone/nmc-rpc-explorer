@@ -2509,6 +2509,16 @@ router.get("/snippet/recent-name-ops", asyncHandler(async (req, res, next) => {
 		const rawTxs = await coreApi.getRawTransactions(txids);
 		const ops = nameApi.collectNameOps(rawTxs).slice(0, limit);
 
+		// Best-effort: also surface pending name ops in the mempool. Falls
+		// through to an empty array if the node lacks `name_pending`.
+		let pending = [];
+		try {
+			const raw = await nameApi.namePending();
+			if (Array.isArray(raw)) pending = raw.slice(0, limit);
+		} catch (_e) {
+			pending = [];
+		}
+
 		res.json({
 			ops: ops.map((op) => ({
 				txid: op.txid,
@@ -2519,12 +2529,116 @@ router.get("/snippet/recent-name-ops", asyncHandler(async (req, res, next) => {
 					? String(op.value).slice(0, 80)
 					: null,
 			})),
+			pending: pending.map((p) => ({
+				txid: p.txid,
+				vout: p.vout,
+				op: p.op,
+				name: p.name || null,
+				valuePreview: p.value ? String(p.value).slice(0, 80) : null,
+			})),
 			window: windowSize,
 			tip: tipInfo.blocks,
 		});
 	} catch (err) {
 		utils.logError("recentNameOps01", err);
 		res.status(500).json({ error: err.message || String(err) });
+	}
+}));
+
+// Full name-op aware mempool view.
+//
+// Walks the entire mempool via `name_pending` (Namecoin Core's mempool-scan
+// RPC for name ops) and groups by operation kind. We intentionally do NOT
+// fall back to fetching every mempool tx and inspecting vouts — `name_pending`
+// is O(name-ops-in-mempool) instead of O(mempool size), which matters under
+// load.
+//
+// We also try to enrich each pending op with whether the name is currently
+// registered (so name_update vs name_firstupdate makes sense in the UI), but
+// we cap that enrichment so a giant flood of pending ops can't melt RPC.
+router.get("/mempool-name-ops", asyncHandler(async (req, res, next) => {
+	try {
+		const { perfId, perfResults } = utils.perfLogNewItem({ action: "mempool-name-ops" });
+		res.locals.perfId = perfId;
+
+		let pending = [];
+		let rpcError = null;
+		try {
+			pending = await utils.timePromise("mempool-name-ops.namePending", async () => {
+				return await nameApi.namePending();
+			}, perfResults);
+			if (!Array.isArray(pending)) pending = [];
+		} catch (err) {
+			rpcError = err.message || String(err);
+			pending = [];
+		}
+
+		// Bucket and sort: name_firstupdate first (most interesting — they
+		// reveal what was committed), then name_update, then name_new.
+		const buckets = { name_firstupdate: [], name_update: [], name_new: [] };
+		const rows = [];
+		for (const p of pending) {
+			if (!p || !p.op) continue;
+			const valueRender = nameApi.renderNameValue(p.value, p.value_encoding);
+			let imports = [];
+			let identities = null;
+			if (valueRender.kind === "json" && valueRender.parsed) {
+				imports = nameApi.collectAllImports(valueRender.parsed);
+				identities = nameApi.parseNostrIdentities(valueRender.parsed, p.name || null);
+			}
+			const row = {
+				op: p.op,
+				txid: p.txid,
+				vout: typeof p.vout === "number" ? p.vout : null,
+				name: p.name || null,
+				name_encoding: p.name_encoding || null,
+				namespace: p.name ? nameApi.splitNamespace(p.name) : null,
+				value: p.value || null,
+				value_encoding: p.value_encoding || null,
+				valueRender,
+				imports,
+				identities,
+				hash: p.hash || null,
+				rand: p.rand || null,
+			};
+			rows.push(row);
+			if (buckets[p.op]) buckets[p.op].push(row);
+		}
+
+		// Mark known/new for non-name_new ops, capped at 25 RPC fetches so
+		// a flood of pending ops can't blow up the page.
+		const lookups = [];
+		for (const row of rows) {
+			if (row.op === "name_new" || !row.name) continue;
+			if (lookups.length >= 25) break;
+			lookups.push(row);
+		}
+		await Promise.all(lookups.map(async (row) => {
+			try {
+				const existing = await nameApi.nameShow(row.name);
+				row.priorHeight = existing && existing.height;
+				row.priorTxid = existing && existing.txid;
+				row.priorExpired = existing && existing.expired;
+			} catch (_e) {
+				row.priorHeight = null;
+				row.priorTxid = null;
+			}
+		}));
+
+		res.locals.pendingTotal = rows.length;
+		res.locals.pendingByOp = buckets;
+		res.locals.pendingRpcError = rpcError;
+		res.locals.perfResults = perfResults;
+
+		res.render("mempool-name-ops");
+		next();
+	} catch (err) {
+		utils.logError("mempoolNameOps01", err);
+		res.locals.userMessageMarkdown = `Failed to load mempool name ops: ${err.message || err}`;
+		res.locals.pendingByOp = { name_firstupdate: [], name_update: [], name_new: [] };
+		res.locals.pendingTotal = 0;
+		res.render("mempool-name-ops");
+		next();
 	}
 }));
 
@@ -2584,6 +2698,15 @@ router.get(/^\/name\/(.+)$/, asyncHandler(async (req, res, next) => {
 			res.locals.imports = [];
 			res.locals.identities = { single: null, names: [], relays: {} };
 			res.locals.idFields = [];
+		}
+
+		// Pending mempool ops referencing THIS name (best-effort; harmless if
+		// `name_pending` rejects the per-name argument on older nodes).
+		try {
+			const pending = await nameApi.namePending(rawName);
+			res.locals.pendingForName = Array.isArray(pending) ? pending : [];
+		} catch (_e) {
+			res.locals.pendingForName = [];
 		}
 
 		// name_history is optional (requires -namehistory). Best-effort.

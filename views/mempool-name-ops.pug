@@ -1,0 +1,150 @@
+extends layout
+
+block headContent
+	title Mempool Name Operations
+
+block content
+	+pageTitle("Mempool Name Operations")
+
+	mixin renderNameOpRow(row)
+		.mb-3.pb-3.border-bottom
+			.row.g-2.mb-2
+				.col-md-3
+					div.text-muted.small Operation
+					div
+						case row.op
+							when "name_new"
+								span.badge.bg-secondary name_new
+							when "name_firstupdate"
+								span.badge.bg-success name_firstupdate
+							when "name_update"
+								span.badge.bg-primary name_update
+							default
+								span.badge.bg-dark= row.op
+				.col-md-3
+					div.text-muted.small Tx
+					div
+						a.font-monospace.small(href=`./tx/${row.txid}`)= row.txid.slice(0, 18) + "…"
+						if (row.vout !== null)
+							span.text-muted.small.ms-2 vout #{row.vout}
+				if (row.name)
+					.col-md-6
+						div.text-muted.small Name
+						div
+							a.font-monospace(href=`./name/${encodeURIComponent(row.name)}`)= row.name
+							if (row.namespace && row.namespace.namespace)
+								span.badge.bg-secondary.ms-2= row.namespace.namespace
+							if (row.priorHeight)
+								span.text-muted.small.ms-2 (already registered at height #{row.priorHeight})
+							else if (row.op === "name_firstupdate")
+								span.text-success.small.ms-2 (new registration)
+							else if (row.op === "name_update" && row.priorHeight === null)
+								span.text-warning.small.ms-2 (orphan? prior record not found)
+
+			if (row.op === "name_new")
+				.row.g-2
+					.col-12
+						div.text-muted.small Pre-image hash
+						div.font-monospace.small.text-break= row.hash
+						div.text-muted.small.mt-1 The actual name is hidden until <code>name_firstupdate</code> is broadcast (anti-frontrunning commitment).
+			else
+				.row.g-2
+					.col-12
+						div.text-muted.small Value
+							span.ms-2.small= row.valueRender.kind === "json" ? "(JSON)" : (row.value_encoding || "text")
+						pre.bg-body-tertiary.p-2.rounded-1.small.mb-0.text-break(style="max-height: 16rem; overflow: auto;")
+							code= row.valueRender.display || ""
+				if (row.imports && row.imports.length)
+					.mt-2.small
+						div.text-muted.mb-1 Imports (ifa-0001 §"import"):
+						each entry in row.imports
+							div.font-monospace
+								if (entry.path && entry.path.length)
+									span.text-muted at <code>#{entry.path.join(".")}</code>:
+								else
+									span.text-muted at top level:
+								each imp in entry.imports
+									span.ms-2
+										a(href=`./name/${encodeURIComponent(imp.name)}`)= imp.name
+										if (imp.selector)
+											span.text-muted.small.ms-1 (selector: <code>#{imp.selector}</code>)
+								if (entry.malformed)
+									span.text-warning.ms-2 (malformed)
+				if (row.identities && (row.identities.single || (row.identities.names && row.identities.names.length)))
+					.mt-2.small
+						div.text-muted.mb-1 Nostr identities published in this op:
+						if (row.identities.single)
+							div.font-monospace.small
+								span.text-muted single:
+								span.ms-2= row.identities.single.npub || row.identities.single.pubkey
+						each n in (row.identities.names || [])
+							div.font-monospace.small
+								span.text-muted= n.localPart + ":"
+								span.ms-2= n.npub || n.hex
+								if (n.nip05)
+									span.text-muted.ms-2 (#{n.nip05})
+
+	if (pendingRpcError)
+		.alert.alert-danger
+			h6.mb-2 RPC error from <code>name_pending</code>
+			div.font-monospace.small= pendingRpcError
+			div.text-muted.small.mt-1.
+				If your Namecoin Core build doesn't expose <code>name_pending</code>,
+				this view cannot be populated. Check that you're running
+				<code>namecoin-core</code> ≥ 0.21 and that the wallet is loaded.
+
+	+contentSection("Summary")
+		.row.g-3
+			.col-md-3
+				div.text-muted.small Total pending name ops
+				div.fs-3.fw-bold= pendingTotal.toLocaleString()
+			.col-md-3
+				div.text-muted.small <code>name_firstupdate</code>
+				div.fs-3
+					span.badge.bg-success= pendingByOp.name_firstupdate.length
+			.col-md-3
+				div.text-muted.small <code>name_update</code>
+				div.fs-3
+					span.badge.bg-primary= pendingByOp.name_update.length
+			.col-md-3
+				div.text-muted.small <code>name_new</code>
+				div.fs-3
+					span.badge.bg-secondary= pendingByOp.name_new.length
+
+		p.text-muted.small.mt-3.mb-0.
+			Backed by <code>name_pending</code> on the Namecoin RPC. Pending
+			operations will resolve when miners include their carrier transaction
+			in a block. <code>name_new</code> ops carry only a salted commitment
+			to a future name; the actual name appears only at
+			<code>name_firstupdate</code> (12 blocks later).
+
+	if (pendingTotal === 0)
+		+contentSection("Pending operations")
+			p.mb-0.text-muted No name operations are currently pending in the mempool.
+	else
+		if (pendingByOp.name_firstupdate.length)
+			+contentSection(`name_firstupdate (${pendingByOp.name_firstupdate.length})`, false, null, false, false)
+				p.text-muted.small.mb-3.
+					These pending transactions reveal the names that were
+					committed via earlier <code>name_new</code> operations.
+					New registrations land here.
+				each row in pendingByOp.name_firstupdate
+					+renderNameOpRow(row)
+
+		if (pendingByOp.name_update.length)
+			+contentSection(`name_update (${pendingByOp.name_update.length})`, false, null, false, false)
+				p.text-muted.small.mb-3.
+					Updates to existing names. The "name" link goes to the
+					currently-confirmed record; this update will replace it
+					on the next confirmation.
+				each row in pendingByOp.name_update
+					+renderNameOpRow(row)
+
+		if (pendingByOp.name_new.length)
+			+contentSection(`name_new (${pendingByOp.name_new.length})`, false, null, false, false)
+				p.text-muted.small.mb-3.
+					Anti-frontrunning commitments. The actual names are hidden
+					and won't be revealed until the matching
+					<code>name_firstupdate</code> confirms (≥ 12 blocks later).
+				each row in pendingByOp.name_new
+					+renderNameOpRow(row)

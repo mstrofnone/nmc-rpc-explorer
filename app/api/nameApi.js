@@ -45,6 +45,30 @@ function nameScan(start, count) {
 	});
 }
 
+// `name_pending` is Namecoin Core's RPC for inspecting name operations
+// currently in the mempool. It returns an array of objects shaped like:
+//
+//   {
+//     op:        "name_new" | "name_firstupdate" | "name_update",
+//     name:      "<utf8 or hex>",   // omitted for name_new
+//     name_encoding: "ascii" | ...,
+//     value:     "<...>",
+//     value_encoding: "ascii" | ...,
+//     txid:      "<hex>",
+//     vout:      <number>,
+//     ismine:    <bool>     // wallet-relative; ignore for explorer
+//   }
+//
+// If a name argument is provided, the RPC restricts results to that name.
+function namePending(name) {
+	const parameters = [];
+	if (name != null) parameters.push(name);
+	return rpcApi.getRpcDataWithParams({
+		method: "name_pending",
+		parameters: parameters,
+	});
+}
+
 // Pull out every name-op output across an array of transactions.
 // Returns an array of { txid, vout, op, name, value, ... } in tx order.
 function collectNameOps(transactions) {
@@ -351,6 +375,7 @@ module.exports = {
 	nameShow,
 	nameHistory,
 	nameScan,
+	namePending,
 	collectNameOps,
 	renderNameValue,
 	splitNamespace,
