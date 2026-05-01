@@ -14,7 +14,11 @@
 				
 				th.text-end.text-card-highlight.fw-normal.text-uppercase.d-none.d-sm-table-cell
 					span.border-dotted(title="<b>Time To Mine</b><br/>The time it took to mine this block after the previous block. <span class='text-success'>Fast</span> blocks (< 5min) and <span class='text-danger'>Slow</span> blocks (> 15min) are highlighted.", data-bs-toggle="tooltip", data-bs-html="true") TTM
-				th.text-start.text-card-highlight.fw-normal.text-uppercase Miner
+				if (config.coin === "NMC")
+					th.text-start.text-card-highlight.fw-normal.text-uppercase
+						span.border-dotted(title="<b>Mining pool</b><br/>Namecoin is <b>merge-mined</b> with Bitcoin: the same hash that mines a Bitcoin block can simultaneously mine a Namecoin block, with no extra hashpower cost. The pool that mined the parent Bitcoin block also mined the NMC block, and its coinbase tag is preserved inside the <code>auxpow</code> blob carried in each NMC block header (<code>auxpow.tx.vin[0].coinbase</code>).<br/><br/>This column matches that parent-coinbase tag (and parent payout address) against the same pool registry the upstream Bitcoin explorer uses, then falls back to the NMC coinbase / NMC payout address. Hover any badge to see exactly which signal matched.", data-bs-toggle="tooltip", data-bs-html="true") Miner
+				else
+					th.text-start.text-card-highlight.fw-normal.text-uppercase Miner
 				th.text-end.text-card-highlight.fw-normal.text-uppercase
 					span.border-dotted(title="The number of transactions included in each block.", data-bs-toggle="tooltip") N(tx)
 
@@ -149,7 +153,8 @@
 									i.bi-backspace.text-danger
 										
 							else
-								span.badge.bg-secondary Unknown
+								- var unknownTitle = (config.coin === "NMC") ? "No matching coinbase tag was found in either the Namecoin coinbase or the parent Bitcoin coinbase carried in the auxpow blob, and no payout address matched a known pool." : "No matching coinbase tag or payout address."
+					span.badge.bg-secondary(data-bs-toggle="tooltip", title=unknownTitle) Unknown
 
 						
 						td.text-end #{block.nTx.toLocaleString()}

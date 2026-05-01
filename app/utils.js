@@ -550,11 +550,28 @@ function logMemoryUsage() {
 	//debugLog("memoryUsage: heapUsed=" + mbUsed + ", heapTotal=" + mbTotal + ", ratio=" + parseInt(mbUsed / mbTotal * 100));
 }
 
-function identifyMiner(coinbaseTx, blockHeight) {
+function identifyMiner(coinbaseTx, blockHeight, block) {
 	if (coinbaseTx == null || coinbaseTx.vin == null || coinbaseTx.vin.length == 0) {
 		return null;
 	}
-	
+
+	// Namecoin merge-mining: the parent Bitcoin coinbase (carried inside
+	// the AuxPow blob) carries the pool's coinbase tag. The NMC coinbase
+	// itself almost never has one. Pull out the parent coinbase ascii so
+	// the BTC-style tag scan below has something to match against. Falls
+	// back gracefully when `block` is omitted or has no auxpow.
+	let auxpowParentCoinbaseAscii = null;
+	let auxpowParentVout0 = null;
+	if (block && block.auxpow && block.auxpow.tx) {
+		const pcb = block.auxpow.tx;
+		if (pcb.vin && pcb.vin[0] && typeof pcb.vin[0].coinbase === "string") {
+			auxpowParentCoinbaseAscii = formatHex(pcb.vin[0].coinbase, "utf8");
+		}
+		if (pcb.vout && pcb.vout.length > 0) {
+			auxpowParentVout0 = pcb.vout[0];
+		}
+	}
+
 	if (global.miningPoolsConfigs) {
 		for (let i = 0; i < global.miningPoolsConfigs.length; i++) {
 			let miningPoolsConfig = global.miningPoolsConfigs[i];
@@ -569,11 +586,32 @@ function identifyMiner(coinbaseTx, blockHeight) {
 							return minerInfo;
 						}
 					}
+					// Also try matching against the parent (Bitcoin) coinbase's
+					// payout address. Some merge-mined pools use the same payout
+					// address on both chains; this catches them when the NMC
+					// payout went to a different (delegate) address.
+					if (auxpowParentVout0) {
+						if (getVoutAddresses(auxpowParentVout0).includes(payoutAddress)) {
+							let minerInfo = miningPoolsConfig.payout_addresses[payoutAddress];
+							minerInfo.identifiedBy = "parent (BTC) coinbase payout address " + payoutAddress + " (merge-mining)";
+
+							return minerInfo;
+						}
+					}
 				}
 			}
 
 			for (let coinbaseTag in miningPoolsConfig.coinbase_tags) {
 				if (miningPoolsConfig.coinbase_tags.hasOwnProperty(coinbaseTag)) {
+					// Prefer scanning the parent (Bitcoin) coinbase tag for
+					// merge-mined Namecoin blocks; fall back to the NMC coinbase
+					// tag for non-merge-mined blocks (or other coins).
+					if (auxpowParentCoinbaseAscii && auxpowParentCoinbaseAscii.indexOf(coinbaseTag) !== -1) {
+						let minerInfo = miningPoolsConfig.coinbase_tags[coinbaseTag];
+						minerInfo.identifiedBy = "parent (BTC) coinbase tag '" + coinbaseTag + "' (merge-mining)";
+
+						return minerInfo;
+					}
 					if (formatHex(coinbaseTx.vin[0].coinbase, "utf8").indexOf(coinbaseTag) != -1) {
 						let minerInfo = miningPoolsConfig.coinbase_tags[coinbaseTag];
 						minerInfo.identifiedBy = "coinbase tag '" + coinbaseTag + "'";

@@ -249,12 +249,19 @@ function getBlockHashByHeight(blockHeight) {
 }
 
 function getBlockByHash(blockHash) {
-	return getRpcDataWithParams({method:"getblock", parameters:[blockHash]})
+	// On Namecoin we want the `auxpow` blob attached to the block so
+	// identifyMiner() can scan the parent Bitcoin coinbase tag (NMC is
+	// merge-mined, so the pool tag lives in the AuxPow's parent coinbase,
+	// not the NMC coinbase). `getblock <hash> 2` returns full decoded txs
+	// plus the auxpow blob; verbosity 1 (the default) does not.
+	const getblockParams = (config.coin === "NMC") ? [blockHash, 2] : [blockHash];
+	return getRpcDataWithParams({method:"getblock", parameters:getblockParams})
 		.then(function(block) {
-			return getRawTransaction(block.tx[0], blockHash).then(function(tx) {
+			return getRawTransaction((typeof block.tx[0] === "string" ? block.tx[0] : block.tx[0].txid), blockHash).then(function(tx) {
 				block.coinbaseTx = tx;
 				block.totalFees = utils.getBlockTotalFeesFromCoinbaseTxAndBlockHeight(tx, block.height);
-				block.miner = utils.identifyMiner(tx, block.height);
+				// The merge-mining-aware identifier looks at block.auxpow when present.
+				block.miner = utils.identifyMiner(tx, block.height, block);
 				return block;
 			})
 		}).catch(function(err) {

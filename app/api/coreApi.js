@@ -1196,7 +1196,9 @@ function getBlockByHashWithTransactions(blockHash, txLimit, txOffset) {
 				if (txsResult.transactions && txsResult.transactions.length > 0) {
 					block.coinbaseTx = txsResult.transactions[0];
 					block.totalFees = utils.getBlockTotalFeesFromCoinbaseTxAndBlockHeight(block.coinbaseTx, block.height);
-					block.miner = utils.identifyMiner(block.coinbaseTx, block.height);
+					// Pass the block to identifyMiner so it can use the auxpow blob
+					// (merge-mined Namecoin) when the NMC coinbase carries no pool tag.
+					block.miner = utils.identifyMiner(block.coinbaseTx, block.height, block);
 				}
 
 				// if we're on page 2+, drop the coinbase tx that was added in order to get miner info
@@ -1279,9 +1281,9 @@ function buildMiningSummary(statusId, startBlock, endBlock, statusFunc) {
 							markItemsDone(1);
 
 
-							const coinbaseTx = await getRawTransaction(block.tx[0]);
+							const coinbaseTx = await getRawTransaction(typeof block.tx[0] === "string" ? block.tx[0] : block.tx[0].txid);
 
-							const minerInfo = utils.identifyMiner(coinbaseTx, height);
+							const minerInfo = utils.identifyMiner(coinbaseTx, height, block);
 							const totalFees = utils.getBlockTotalFeesFromCoinbaseTxAndBlockHeight(coinbaseTx, height);
 							const subsidy = coinConfig.blockRewardFunction(height, global.activeBlockchain);
 
