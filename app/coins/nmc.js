@@ -37,7 +37,7 @@ const currencyUnits = [
 	},
 	{
 		type: "native",
-		name: "swartz",
+		name: "Swartz",
 		multiplier: 1000000,
 		values: ["swartz"],
 		decimalPlaces: 2,
@@ -96,7 +96,7 @@ module.exports = {
 	currencyUnitsByName: {
 		"NMC": currencyUnits[0],
 		"mNMC": currencyUnits[1],
-		"swartz": currencyUnits[2],
+		"Swartz": currencyUnits[2],
 		"sat": currencyUnits[3],
 	},
 	baseCurrencyUnit: currencyUnits[3],

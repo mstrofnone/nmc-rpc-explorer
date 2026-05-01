@@ -133,6 +133,25 @@ if (process.env.BTCEXP_COIN && process.env.BTCEXP_COIN !== "BTC") {
 		global.currencyTypes.btc.decimalPlaces = nativeDp;
 		global.currencyTypes[nativeName.toLowerCase()] = global.currencyTypes.btc;
 	}
+
+	// On Namecoin, retarget the "sat" small-unit slot to **Swartz**
+	// (1,000,000 per NMC, the user-friendly subdivision defined in
+	// app/coins/nmc.js). The cookie value stays "sat" so existing
+	// `displayCurrency == "sat"` checks across views keep working,
+	// but the visible label switches to "Swartz" everywhere it
+	// renders (the settings-cog button, the small-unit label next
+	// to amounts in the latest-blocks table, etc.). Done by name
+	// lookup so any coin that publishes a "swartz"-style mid-unit
+	// gets it; coins without one fall through unchanged.
+	if (activeCoinModule && Array.isArray(activeCoinModule.currencyUnits) && global.currencyTypes && global.currencyTypes.sat) {
+		const midUnit = activeCoinModule.currencyUnits.find(u => u && u.name && /^(swartz|finney|szabo|wei)$/i.test(u.name));
+		if (midUnit) {
+			global.currencyTypes.sat.name = midUnit.name;
+			global.currencyTypes.sat.multiplier = midUnit.multiplier;
+			global.currencyTypes.sat.decimalPlaces = midUnit.decimalPlaces;
+			global.currencyTypes[midUnit.name.toLowerCase()] = global.currencyTypes.sat;
+		}
+	}
 }
 
 const package_json = require('./package.json');
