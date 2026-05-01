@@ -19,6 +19,7 @@
 // We never have to parse raw scripts ourselves.
 
 const rpcApi = require("./rpcApi.js");
+const { bech32 } = require("bech32");
 
 function nameShow(name) {
 	return rpcApi.getRpcDataWithParams({
@@ -215,6 +216,137 @@ function collectAllImports(parsedValue, _depth = 0) {
 	return results;
 }
 
+// ---------------------------------------------------------------------------
+// NameID / Nostr identity detection.
+//
+// NameID spec (id/<name> records): https://nameid.org
+// Common fields on an `id/` value:
+//   { name, email, bitcoin, namecoin, paypal, gpg: { fingerprint, ... },
+//     pgp: { fingerprint, ... }, otr: { fingerprint }, tor, freenet,
+//     i2p, bitmessage, btcbit, im: { skype, jabber, ... }, www, nostr: ... }
+//
+// Nostr-on-Namecoin (the `.bit` NIP-05 extension): a `nostr` block can live
+// on EITHER `d/<name>` (per-subdomain NIP-05 mappings) or `id/<name>`
+// (single-identity record). Two shapes are accepted by quartz/amethyst:
+//
+//   1) Multi-identity (typical on `d/`):
+//      "nostr": { "names": { "<local-part>": "<hex-pubkey>", ... },
+//                 "relays": { "<hex-pubkey>": ["wss://..."] } }
+//
+//   2) Single-identity (typical on `id/` per quartz commit b5713d3c4):
+//      "nostr": { "pubkey": "<hex>", "relays": ["wss://..."] }
+//
+// Both are detected here.
+// ---------------------------------------------------------------------------
+
+function isHex64(s) {
+	return typeof s === "string" && /^[0-9a-fA-F]{64}$/.test(s);
+}
+
+function npubFromHex(hex) {
+	if (!isHex64(hex)) return null;
+	try {
+		const bytes = Buffer.from(hex, "hex");
+		const words = bech32.toWords(bytes);
+		return bech32.encode("npub", words, 1023);
+	} catch (_e) {
+		return null;
+	}
+}
+
+// Build a NIP-05 identifier "<localPart>@<host>" from a Namecoin name like
+// "d/testls" -> "<localPart>@testls.bit". Returns null for non-d/ names.
+function nip05ForLocalPart(parentName, localPart) {
+	if (!parentName || typeof parentName !== "string") return null;
+	const ns = splitNamespace(parentName);
+	if (ns.namespace !== "d" || !ns.label) return null;
+	const host = `${ns.label}.bit`;
+	return `${localPart}@${host}`;
+}
+
+// Returns { single: { pubkey, npub, relays }|null,
+//           names: [{ localPart, hex, npub, relays:[...], nip05 }, ...],
+//           relays: { <hex>: [<wss-url>, ...] } }
+// `parentName` is the Namecoin name that carries the record (e.g. "d/testls"
+// or "id/alice") — used to build "<localPart>@<host>" NIP-05 hints.
+function parseNostrIdentities(parsedValue, parentName) {
+	const out = { single: null, names: [], relays: {} };
+	if (!parsedValue || typeof parsedValue !== "object") return out;
+
+	const nostr = parsedValue.nostr;
+	if (!nostr || typeof nostr !== "object") return out;
+
+	// Single-identity form
+	if (typeof nostr.pubkey === "string" && isHex64(nostr.pubkey)) {
+		const hex = nostr.pubkey.toLowerCase();
+		const relays = Array.isArray(nostr.relays)
+			? nostr.relays.filter((r) => typeof r === "string")
+			: [];
+		out.single = { pubkey: hex, npub: npubFromHex(hex), relays };
+	}
+
+	// Per-pubkey relay map
+	if (nostr.relays && typeof nostr.relays === "object" && !Array.isArray(nostr.relays)) {
+		for (const [k, v] of Object.entries(nostr.relays)) {
+			if (!isHex64(k)) continue;
+			const list = Array.isArray(v) ? v.filter((r) => typeof r === "string") : [];
+			out.relays[k.toLowerCase()] = list;
+		}
+	}
+
+	// Multi-identity `names` map
+	if (nostr.names && typeof nostr.names === "object" && !Array.isArray(nostr.names)) {
+		for (const [localPart, hex] of Object.entries(nostr.names)) {
+			if (typeof hex !== "string" || !isHex64(hex)) continue;
+			const hexLower = hex.toLowerCase();
+			out.names.push({
+				localPart,
+				hex: hexLower,
+				npub: npubFromHex(hexLower),
+				relays: out.relays[hexLower] || [],
+				nip05: nip05ForLocalPart(parentName, localPart),
+			});
+		}
+	}
+
+	return out;
+}
+
+// Other NameID fields worth surfacing on the name page.
+// Returns a list of { field, label, kind, value, href? } entries for rendering.
+function parseNameIdFields(parsedValue) {
+	const fields = [];
+	if (!parsedValue || typeof parsedValue !== "object") return fields;
+
+	const push = (field, label, value, kind, href) => {
+		if (value == null || value === "") return;
+		fields.push({ field, label, kind: kind || "text", value, href: href || null });
+	};
+
+	if (typeof parsedValue.name === "string") push("name", "Display name", parsedValue.name);
+	if (typeof parsedValue.email === "string") {
+		push("email", "Email", parsedValue.email, "link", `mailto:${parsedValue.email}`);
+	}
+	if (typeof parsedValue.www === "string") {
+		push("www", "Website", parsedValue.www, "link", parsedValue.www);
+	}
+	if (typeof parsedValue.bitcoin === "string") push("bitcoin", "Bitcoin address", parsedValue.bitcoin, "mono");
+	if (typeof parsedValue.namecoin === "string") push("namecoin", "Namecoin address", parsedValue.namecoin, "mono");
+	if (typeof parsedValue.tor === "string") push("tor", "Tor onion", parsedValue.tor, "mono");
+
+	// PGP / GPG fingerprints can be a string, or an object with .fingerprint
+	const pgp = parsedValue.pgp || parsedValue.gpg;
+	if (pgp) {
+		if (typeof pgp === "string") {
+			push("pgp", "PGP fingerprint", pgp, "mono");
+		} else if (typeof pgp === "object" && typeof pgp.fingerprint === "string") {
+			push("pgp", "PGP fingerprint", pgp.fingerprint, "mono");
+		}
+	}
+
+	return fields;
+}
+
 module.exports = {
 	nameShow,
 	nameHistory,
@@ -225,4 +357,9 @@ module.exports = {
 	namespaceLabel,
 	parseImports,
 	collectAllImports,
+	isHex64,
+	npubFromHex,
+	parseNostrIdentities,
+	parseNameIdFields,
+	nip05ForLocalPart,
 };

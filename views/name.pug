@@ -99,6 +99,76 @@ block content
 										td(colspan="3")
 											span.badge.bg-warning Malformed import entry at <code>#{entry.path.join(".") || "(top)"}</code>
 
+		- var hasIdentities = identities && (identities.single || (identities.names && identities.names.length));
+		- var hasIdFields = idFields && idFields.length;
+		if (hasIdentities || hasIdFields)
+			+contentSection("Identity")
+				if (namespace && namespace.namespace === "id")
+					p.text-muted.small.mb-3.
+						<strong>NameID</strong> identity record. Each field below is
+						interpreted per the
+						<a href="https://nameid.org/" target="_blank" rel="noopener">NameID convention</a>.
+
+				if (hasIdFields)
+					.table-responsive.mb-3
+						table.table.table-sm.mb-0
+							tbody
+								each f in idFields
+									tr
+										th.text-muted.small(style="width:25%")= f.label
+										td
+											case f.kind
+												when "link"
+													a(href=f.href, rel="noopener", target="_blank")= f.value
+												when "mono"
+													code.small.text-break= f.value
+												default
+													span= f.value
+
+				if (identities.single)
+					div.mb-3
+						div.text-muted.small Nostr (single-identity record)
+						div
+							code.font-monospace.small.text-break= identities.single.npub || identities.single.pubkey
+							if (identities.single.npub)
+								a.ms-2.small(href=`https://njump.me/${identities.single.npub}`, target="_blank", rel="noopener") view on njump.me
+						if (identities.single.relays && identities.single.relays.length)
+							div.text-muted.small.mt-1 Preferred relays:
+							ul.small.font-monospace.mb-0
+								each r in identities.single.relays
+									li= r
+
+				if (identities.names && identities.names.length)
+					div
+						div.text-muted.small.mb-2 NIP-05 identities published under this name
+						.table-responsive
+							table.table.table-sm.mb-0
+								thead
+									tr
+										th NIP-05
+										th Pubkey (npub)
+										th Relays
+								tbody
+									each n in identities.names
+										tr
+											td.font-monospace.small
+												if (n.nip05)
+													= n.nip05
+												else
+													span.text-muted= n.localPart
+											td.font-monospace.small.text-break
+												if (n.npub)
+													a(href=`https://njump.me/${n.npub}`, target="_blank", rel="noopener")= n.npub
+												else
+													= n.hex
+											td
+												if (n.relays && n.relays.length)
+													ul.small.font-monospace.mb-0
+														each r in n.relays
+															li= r
+												else
+													span.text-muted —
+
 		if (nameHistory && nameHistory.length)
 			+contentSection(`History (${nameHistory.length})`)
 				.table-responsive

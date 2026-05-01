@@ -2570,11 +2570,20 @@ router.get(/^\/name\/(.+)$/, asyncHandler(async (req, res, next) => {
 			nameInfo.value_encoding
 		);
 
-		// Detect ifa-0001 §"import" references nested anywhere in the value.
+		// Detect ifa-0001 §"import" references nested anywhere in the value,
+		// plus NameID / Nostr identities (single-identity form on id/, plus
+		// the multi-identity nostr.names mapping commonly found on d/ records).
 		if (res.locals.valueRender.kind === "json" && res.locals.valueRender.parsed) {
 			res.locals.imports = nameApi.collectAllImports(res.locals.valueRender.parsed);
+			res.locals.identities = nameApi.parseNostrIdentities(
+				res.locals.valueRender.parsed,
+				rawName
+			);
+			res.locals.idFields = nameApi.parseNameIdFields(res.locals.valueRender.parsed);
 		} else {
 			res.locals.imports = [];
+			res.locals.identities = { single: null, names: [], relays: {} };
+			res.locals.idFields = [];
 		}
 
 		// name_history is optional (requires -namehistory). Best-effort.
