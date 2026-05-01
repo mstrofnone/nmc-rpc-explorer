@@ -111,6 +111,30 @@ if (config.cdn.active) {
 
 require("./app/currencies.js");
 
+// When running in non-BTC mode (e.g. Namecoin), the upstream `displayCurrency`
+// state machine still routes native amounts through the "btc" currency-type slot
+// (the lower-case key is the radio-button id stored in cookies, NOT the visible
+// label). Re-label that slot so views like blocks-list and tx-stats render
+// "NMC" alongside values instead of "BTC". The other native-unit aliases
+// ("sat") stay shared with Bitcoin since they're identical at the protocol level.
+//
+// We ALSO register a lowercase-ticker peer slot that points at the same data,
+// because some templates (e.g. index-network-summary.pug formatFees) re-look
+// up the currency type by `parts.currencyUnit.toLowerCase()` after we've
+// already renamed the `.name` field — without that peer slot the lookup
+// would return undefined and crash the homepage.
+if (process.env.BTCEXP_COIN && process.env.BTCEXP_COIN !== "BTC") {
+	const coins = require("./app/coins.js");
+	const activeCoinModule = coins[process.env.BTCEXP_COIN];
+	if (activeCoinModule && activeCoinModule.defaultCurrencyUnit && global.currencyTypes && global.currencyTypes.btc) {
+		const nativeName = activeCoinModule.defaultCurrencyUnit.name;
+		const nativeDp = activeCoinModule.defaultCurrencyUnit.decimalPlaces;
+		global.currencyTypes.btc.name = nativeName;
+		global.currencyTypes.btc.decimalPlaces = nativeDp;
+		global.currencyTypes[nativeName.toLowerCase()] = global.currencyTypes.btc;
+	}
+}
+
 const package_json = require('./package.json');
 global.appVersion = package_json.version;
 global.cacheId = global.appVersion;

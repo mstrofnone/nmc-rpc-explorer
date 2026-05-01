@@ -67,10 +67,18 @@ block content
 						i.bi-git.fs-6.text-white.me-2
 						| View Source
 
-				a.btn.btn-sm.btn-primary.mb-2.mb-md-1.me-3(href="https://donate.bitcoinexplorer.org", target="_blank", title="Support this project with a donation", data-bs-toggle="tooltip", data-bs-placement="bottom")
+				a.btn.btn-sm.btn-primary.mb-2.mb-md-1.me-3(href="https://donate.bitcoinexplorer.org", target="_blank", title="Support btc-rpc-explorer (the upstream project) with a donation", data-bs-toggle="tooltip", data-bs-placement="bottom")
 					i.bi-heart-fill.fs-6.text-danger.me-2
 					| Donate
-					
+
+				//- Namecoin donation button: same shape as the upstream Donate button
+				//- but with a blue heart, so it sits between Donate (red heart) and
+				//- @BitcoinExplorer without being mistaken for the upstream donation.
+				if (config.coin === "NMC")
+					a.btn.btn-sm.btn-primary.mb-2.mb-md-1.me-3(href="https://www.namecoin.org/donate/", target="_blank", title="Donate to Namecoin", data-bs-toggle="tooltip", data-bs-placement="bottom")
+						i.bi-heart-fill.fs-6.text-info.me-2
+						| Donate to Namecoin
+
 				a.btn.btn-sm.btn-primary.mb-2.mb-md-1.me-3(href="https://twitter.com/BitcoinExplorer", target="_blank", title="Follow @BitcoinExplorer on Twitter", data-bs-toggle="tooltip", data-bs-placement="bottom")
 					i.bi-twitter.fs-6.text-twitter.me-2
 					| @BitcoinExplorer
