@@ -153,12 +153,15 @@ html(lang="en")
 								.dropdown-menu.dropdown-menu-end.shadow(aria-labelledby="navbarDropdown")
 									span.dropdown-header Display Currency
 
-									//- The settings store native unit as `btc` (legacy) and `sat`. We
-									//- keep those values to avoid breaking the many `displayCurrency == "btc"`
-									//- checks across views, but display the configured coin's ticker as
-									//- the label so a Namecoin instance shows "NMC" instead of "BTC".
-									- var nativeTicker = (coinConfig && coinConfig.ticker) ? coinConfig.ticker : "BTC"
-									- var items = [{value: "btc", label: nativeTicker}, {value: "sat", label: "sat"}]
+									//- The settings store native unit as `btc` (legacy) and `sat` for the
+									//- small unit. We keep those COOKIE values to avoid breaking the many
+									//- `displayCurrency == "btc"` / `== "sat"` checks across views, but display
+									//- whichever label the active coin's currencyType slots resolve to (we
+									//- rewrite those at boot in app.js when BTCEXP_COIN !== "BTC"). On Namecoin
+									//- this surfaces as "NMC" / "Swartz" instead of "BTC" / "sat".
+									- var nativeTicker = (global.currencyTypes && global.currencyTypes.btc && global.currencyTypes.btc.name) ? global.currencyTypes.btc.name : ((coinConfig && coinConfig.ticker) ? coinConfig.ticker : "BTC")
+									- var smallUnitName = (global.currencyTypes && global.currencyTypes.sat && global.currencyTypes.sat.name) ? global.currencyTypes.sat.name : "sat"
+									- var items = [{value: "btc", label: nativeTicker}, {value: "sat", label: smallUnitName}]
 									if (config.queryExchangeRates && global.exchangeRates)
 										- items.push({value: "local", label: "local"})
 
@@ -233,7 +236,10 @@ html(lang="en")
 				- var searchPlaceholder = (config.coin === "NMC") ? "block height/hash, txid, address, d/name" : "block height/hash, txid, address"
 				- var searchPlaceholderShort = (config.coin === "NMC") ? "height/hash/txid/d/name..." : "height/hash/txid..."
 
-				form.form-inline.d-none.d-lg-inline(method="post", action="./search", style="width: 325px;")
+				//- Width tiers so a long Namecoin name like "d/anguillanationalalliance"
+				//- doesn't get truncated: 325px on lg, 420px on xl, 540px on xxl.
+				- var searchInlineWidth = (config.coin === "NMC") ? "min-width: 325px; width: clamp(325px, 32vw, 540px);" : "width: 325px;"
+				form.form-inline.d-none.d-lg-inline(method="post", action="./search", style=searchInlineWidth)
 					input(type="hidden", name="_csrf", value=csrfToken)
 					.input-group
 						input.form-control(type="text", name="query", placeholder=searchPlaceholder, value=(query), autocapitalize="off", autocomplete="off", autocorrect="off", spellcheck="false")

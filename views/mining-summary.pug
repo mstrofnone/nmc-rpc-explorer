@@ -7,8 +7,11 @@ block content
 	+pageTitle("Mining Summary")
 
 
+	- var nodeName = (coinConfig && coinConfig.name) ? `${coinConfig.name} Core` : "Bitcoin Core"
 	+dismissableInfoAlert("miningSummaryPageNoteDismissed", "About Mining Summary...")
-		| !{markdown("The **Mining Summary** tool queries a range of blocks from Bitcoin Core and tries to identify the miner for each block. The identification of a mining entity is an imperfect process, relying on optional flagging by anonymous entities (though, in practice, it tends to work well).")}
+		| !{markdown(`The **Mining Summary** tool queries a range of blocks from ${nodeName} and tries to identify the mining pool for each block. The identification of a mining entity is an imperfect process, relying on optional flagging by anonymous entities (though, in practice, it tends to work well).`)}
+		if (config.coin === "NMC")
+			| !{markdown(" Namecoin is **merge-mined** with Bitcoin: the same hash that mines a Bitcoin block can simultaneously mine a Namecoin block. So the pool that mined the parent Bitcoin block also mined the NMC block, and its coinbase tag is preserved inside the `auxpow` blob carried in each NMC block header. The identifier scans the parent Bitcoin coinbase tag first, then falls back to the NMC coinbase tag, then to the payout address.")}
 		| Use the <b>Filters</b> section below to select the range of blocks to analyze.
 
 
@@ -40,8 +43,10 @@ block content
 						table.table.table-borderless.table-striped.mb-0
 							thead
 								tr
-									th.text-card-highlight.text-uppercase.fw-light Miner
+									th.text-card-highlight.text-uppercase.fw-light Mining Pool
 									th.text-end.text-card-highlight.text-uppercase.fw-light Blocks
+									th.text-end.text-card-highlight.text-uppercase.fw-light
+										span.border-dotted(title="Percent of all blocks in the selected range mined by this pool.", data-bs-toggle="tooltip") % Blocks
 									th.text-end.text-card-highlight.text-uppercase.fw-light
 										span.border-dotted(title="Σ (Subsidy + Fees)", data-bs-toggle="tooltip") Revenue
 									th.text-end.text-card-highlight.text-uppercase.fw-light
@@ -55,6 +60,9 @@ block content
 									
 									td.text-end
 										span.miner-block-count
+
+									td.text-end
+										span.miner-block-percent
 									
 									td.text-end
 										span.miner-subsidy-fees
@@ -70,6 +78,9 @@ block content
 									
 									th.text-end
 										span.miner-block-count
+
+									th.text-end
+										| 100%
 									
 									th.text-end
 										span.miner-subsidy-fees
@@ -204,7 +215,7 @@ block endOfBody
 				}
 
 				row.find(".miner-block-count").html(`<a href='javascript:void(0);' onclick="javascipt:$('#miner-block-heights-${i}').toggle();" title="Click to show ${minerSummary.blocks.length.toLocaleString()} block height(s)" data-bs-toggle="tooltip">${minerSummary.blocks.length.toLocaleString()}</a><br/><small id='miner-block-heights-${i}' style='display: none;'>${blockHeightsHtml}</small>`);
-				row.find(".miner-block-percent").text(`(${new Decimal(minerSummary.blocks.length).dividedBy(summary.overall.blockCount).times(100).toDecimalPlaces(1)}%)`);
+				row.find(".miner-block-percent").text(`${new Decimal(minerSummary.blocks.length).dividedBy(summary.overall.blockCount).times(100).toDecimalPlaces(1)}%`);
 				
 				var subsidyPlusFees = new Decimal(minerSummary.totalSubsidy).plus(new Decimal(minerSummary.totalFees));
 				
