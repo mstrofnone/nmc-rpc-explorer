@@ -154,7 +154,7 @@
 										
 							else
 								- var unknownTitle = (config.coin === "NMC") ? "No matching coinbase tag was found in either the Namecoin coinbase or the parent Bitcoin coinbase carried in the auxpow blob, and no payout address matched a known pool." : "No matching coinbase tag or payout address."
-					span.badge.bg-secondary(data-bs-toggle="tooltip", title=unknownTitle) Unknown
+								span.badge.bg-secondary(data-bs-toggle="tooltip", title=unknownTitle) Unknown
 
 						
 						td.text-end #{block.nTx.toLocaleString()}
