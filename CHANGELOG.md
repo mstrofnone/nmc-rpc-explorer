@@ -1,3 +1,26 @@
+##### nmc-3.6.13
+###### 2026-05-03
+
+**Rebrand source-code link to the Namecoin fork; add masonry packing on /rpc-browser.**
+
+Homepage hero buttons: "View Source" now points at
+`https://github.com/namecoin/nmc-rpc-explorer` (this fork). A new
+"View Upstream Source" button sits next to it, linking the upstream
+`janoside/btc-rpc-explorer` repo. The Namecoin fork is now the
+first-class source link from the homepage; the upstream is still
+one click away.
+
+`/rpc-browser` (no method selected) used a Bootstrap row of three
+fixed columns, which made every logical row as tall as the tallest
+card in it. With Wallet (68 methods) sitting next to Signer (1
+method), most of the page was whitespace. Switched the section list
+to a CSS multicolumn (`column-count: 1/2/3` with `break-inside:
+avoid` on each section card) so cards flow into the shortest column
+like a masonry grid. Each card's width and internal size are
+unchanged — only the empty space between rows collapses. Total page
+height on `/rpc-browser` index drops by roughly the difference
+between the largest and smallest sections.
+
 ##### nmc-3.6.12
 ###### 2026-05-02
 

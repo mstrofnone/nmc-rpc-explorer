@@ -9,6 +9,33 @@ block headContent
 			word-wrap: break-word;       /* Internet Explorer 5.5+ */
 		}
 
+		/* Masonry-style packing for the RPC method section list on the
+		   index (no method selected). The default Bootstrap row makes
+		   every column in a logical row as tall as the tallest card, so
+		   short sections (Signer, Zmq) leave huge blank space next to
+		   Wallet. CSS multicolumn flows cards into the shortest available
+		   column instead, while keeping each card's width and internal
+		   size unchanged. Total page height collapses to roughly the
+		   tallest single section. */
+		.rpc-section-grid {
+			column-gap: 1rem;        /* matches Bootstrap g-3 horizontal gap */
+			column-count: 1;
+		}
+		@media (min-width: 768px) {
+			.rpc-section-grid { column-count: 2; }
+		}
+		@media (min-width: 992px) {
+			.rpc-section-grid { column-count: 3; }
+		}
+		.rpc-section-grid > .rpc-section-item {
+			break-inside: avoid;
+			-webkit-column-break-inside: avoid;
+			page-break-inside: avoid;
+			display: inline-block;   /* belt-and-braces for older WebKit */
+			width: 100%;
+			margin-bottom: 1rem;     /* matches Bootstrap g-3 vertical gap */
+		}
+
 block content
 	+pageTitle("RPC Browser")
 
@@ -45,9 +72,9 @@ block content
 						li
 							a(href=`./rpc-browser?method=${methodX}`) #{methodX}
 
-		.row.row-cols-1.row-cols-md-2.row-cols-lg-3.g-3.mt-3
+		.rpc-section-grid.mt-3
 			each section, sectionIndex in gethelp
-				.col
+				.rpc-section-item
 					+contentSection(`${section.name} (${section.methods.length})`)
 						ol.mb-0.ps-4
 							each methodX, methodIndex in section.methods
