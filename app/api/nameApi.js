@@ -466,25 +466,106 @@ function classifyNameValue(parsed, rawValue) {
 		tags.add("i2p");
 	}
 
+	// DNS record types. These are ifa-0001 §"map" sub-fields that carry
+	// individual DNS record types. Each gets its own filter so users can
+	// inspect names by specific DNS capability.
+	//
+	// ifa-0001 mapping:
+	//   - ip       → A      (IPv4 address)
+	//   - ip6      → AAAA   (IPv6 address)
+	//   - alias / translate → CNAME  (canonical name aliasing)
+	//   - ns       → NS     (nameserver delegation)
+	//   - email / mx → MX   (mail exchange)
+	//   - txt      → TXT    (arbitrary text records)
+	//   - service  → SRV    (service location)
+	//   - tls / tlsa → TLSA (DANE TLS pinning)
+	//   - ds       → DS     (DNSSEC delegation signer)
+	//   - dnssec   → DNSSEC (cryptographic validation marker)
+	if (hasJson) {
+		// A — IPv4 address mapping (`ip` field per ifa-0001, or any literal v4 in haystack)
+		if (_hasKeyDeep(parsed, (k) => k === "ip" || k === "ip4") || IPV4_RE.test(haystack)) {
+			tags.add("a");
+		}
+		// AAAA — IPv6 address mapping (`ip6` field, or any literal v6 in haystack)
+		if (_hasKeyDeep(parsed, (k) => k === "ip6") || IPV6_RE.test(haystack)) {
+			tags.add("aaaa");
+		}
+		// CNAME — Canonical name aliases (`alias` or `translate` per ifa-0001)
+		if (_hasKeyDeep(parsed, (k) => k === "alias" || k === "translate" || k === "cname")) {
+			tags.add("cname");
+		}
+		// NS — Nameserver delegation (`ns` field per ifa-0001)
+		if (_hasKeyDeep(parsed, (k) => k === "ns")) {
+			tags.add("ns");
+		}
+		// MX — Mail exchange servers (`email` shorthand or `mx` array per ifa-0001)
+		if (_hasKeyDeep(parsed, (k) => k === "email" || k === "mx")) {
+			tags.add("mx");
+		}
+		// TXT — Text records (arbitrary data; `txt` per ifa-0001)
+		if (_hasKeyDeep(parsed, (k) => k === "txt")) {
+			tags.add("txt");
+		}
+		// SRV — Service location records (`service` per ifa-0001, or `srv`)
+		if (_hasKeyDeep(parsed, (k) => k === "service" || k === "srv")) {
+			tags.add("srv");
+		}
+		// SOA — Start of authority. Not part of ifa-0001 core but appears in
+		// some DNS-bridge records as a `soa` field.
+		if (_hasKeyDeep(parsed, (k) => k === "soa")) {
+			tags.add("soa");
+		}
+		// DS — Delegation signer (DNSSEC). `ds` field per ifa-0001 §"ds".
+		if (_hasKeyDeep(parsed, (k) => k === "ds")) {
+			tags.add("ds");
+		}
+		// DNSSEC — explicit `dnssec` field marker, OR any combination of
+		// DNSSEC-validation records (`ds`, `tls`/`tlsa`, `rrsig`, `dnskey`).
+		// Treat presence of any cryptographic-validation record as a DNSSEC tag.
+		if (_hasKeyDeep(parsed, (k) => k === "dnssec" || k === "rrsig" || k === "dnskey" || k === "nsec" || k === "nsec3" || k === "ds")) {
+			tags.add("dnssec");
+		}
+	}
+
 	return tags;
 }
 
-const FILTER_KEYS = ["json", "onion", "tls", "ip", "nostr", "i2p"];
+const FILTER_KEYS = ["json", "onion", "tls", "ip", "nostr", "i2p", "a", "aaaa", "cname", "ns", "mx", "txt", "srv", "soa", "ds", "dnssec"];
 const FILTER_LABELS = {
 	json: "Valid JSON",
 	onion: ".onion",
-	tls: "TLS",
+	tls: "TLSA",
 	ip: "IP addresses",
 	nostr: "Nostr",
 	i2p: "I2P",
+	a: "A (IPv4)",
+	aaaa: "AAAA (IPv6)",
+	cname: "CNAME",
+	ns: "NS",
+	mx: "MX",
+	txt: "TXT",
+	srv: "SRV",
+	soa: "SOA",
+	ds: "DS",
+	dnssec: "DNSSEC",
 };
 const FILTER_DESCRIPTIONS = {
 	json: "Names whose value parses as JSON. The Namecoin convention is to use JSON for any structured record (d/, id/, dd/, nft/, ...); a name without JSON is usually a one-line text payload.",
 	onion: "Names whose value carries a Tor v2/v3 onion address — either as a `tor` / `_tor` field (NameID convention) or as any v3 .onion hostname embedded anywhere in the value.",
-	tls: "Names that publish TLSA records (ifa-0001 §tls). The `tls` field is an array of `[usage, selector, mtype, hash]` tuples used to pin a host's TLS certificate via Namecoin instead of a public CA.",
-	ip: "Names that publish at least one IP address (`ip` / `ip4` / `ip6` field per ifa-0001, or a literal address anywhere in the value).",
+	tls: "Names that publish TLSA records (ifa-0001 §tls). The `tls` field is an array of `[usage, selector, mtype, hash]` tuples used to pin a host's TLS certificate via Namecoin instead of a public CA. Used by .bit relays for DANE TLS pinning.",
+	ip: "Names that publish at least one IP address (`ip` / `ip4` / `ip6` field per ifa-0001, or a literal address anywhere in the value). Combines A and AAAA for backwards compat.",
 	nostr: "Names that publish a Nostr identity — either a single `nostr.pubkey` (NameID-style) or a multi-identity `nostr.names` map for NIP-05 delegation across subdomains.",
 	i2p: "Names that publish an I2P address — either an `i2p` field or a `.b32.i2p` host embedded in the value.",
+	a: "A — IPv4 address mapping (ifa-0001 `ip` field). Maps a name to one or more IPv4 addresses.",
+	aaaa: "AAAA — IPv6 address mapping (ifa-0001 `ip6` field). Maps a name to one or more IPv6 addresses.",
+	cname: "CNAME — Canonical name alias (ifa-0001 `alias` / `translate`). Redirects this name's resolution to another name.",
+	ns: "NS — Nameserver delegation (ifa-0001 `ns` field). Delegates resolution authority to one or more DNS nameservers.",
+	mx: "MX — Mail exchange servers (ifa-0001 `email` / `mx`). Specifies which mail servers handle email for this name.",
+	txt: "TXT — Text records (ifa-0001 `txt` field). Arbitrary text data; commonly used for SPF, DKIM, domain verification, and ad-hoc metadata.",
+	srv: "SRV — Service location records (ifa-0001 `service` field). Locates a host:port for a named service (e.g. `_xmpp._tcp`).",
+	soa: "SOA — Start of authority record. Indicates the primary nameserver and admin contact for a DNS zone served via Namecoin.",
+	ds: "DS — Delegation signer (DNSSEC). The `ds` field carries the cryptographic hash of a child zone's DNSKEY, anchoring DNSSEC validation in the Namecoin record.",
+	dnssec: "DNSSEC-related records (cryptographic validation). Names carrying any DNSSEC-validation field: `dnssec`, `ds`, `rrsig`, `dnskey`, `nsec`, or `nsec3`.",
 };
 
 // ---------------------------------------------------------------------------
@@ -514,8 +595,8 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 		active: 0,
 		expired: 0,
 		byNamespace: {},
-		filterCounts: { json: 0, onion: 0, tls: 0, ip: 0, nostr: 0, i2p: 0 },
-		filterLists: { json: [], onion: [], tls: [], ip: [], nostr: [], i2p: [] },
+		filterCounts: Object.fromEntries(FILTER_KEYS.map(k => [k, 0])),
+		filterLists: Object.fromEntries(FILTER_KEYS.map(k => [k, []])),
 		filterListCap,
 		scannedAt: null,
 		truncated: false,

@@ -1,3 +1,32 @@
+##### nmc-3.6.9
+###### 2026-05-02
+
+**DNS record filters on `/utxo-set`** — expand the existing filter block with per-record-type tiles for every common DNS resource record published via ifa-0001 §map fields. Counts are click-through to the cached match list at `/names/filter/:filter`.
+
+The `/utxo-set` filter section now splits in two:
+
+*Value-shape filters* (existing) — Valid JSON, .onion, TLSA, IP addresses (combined v4+v6), Nostr, I2P.
+
+*DNS record filters* (new) — ten tiles, one per RR type:
+
+* **A** (IPv4) — `ip` field per ifa-0001, or any literal IPv4 in the value.
+* **AAAA** (IPv6) — `ip6` field, or any literal IPv6 in the value.
+* **CNAME** — `alias` / `translate` field redirecting to another name.
+* **NS** — `ns` field delegating resolution authority to one or more nameservers.
+* **MX** — `email` shorthand or `mx` array specifying mail exchange servers.
+* **TXT** — `txt` field carrying arbitrary text data (SPF, DKIM, verification, ad-hoc metadata).
+* **SRV** — `service` field locating host:port for named services (e.g. `_xmpp._tcp`).
+* **SOA** — `soa` field declaring DNS zone authority.
+* **DS** — Delegation signer (DNSSEC). The `ds` field anchors DNSSEC validation for a child zone.
+* **DNSSEC** — cryptographic-validation marker. Names carrying any of `dnssec`, `rrsig`, `dnskey`, `nsec`, `nsec3`, or `ds`.
+
+Under the hood:
+
+* `nameApi.classifyNameValue()` extended with ten new tag detections; each runs in the same single-pass classifier loop as the existing six (no extra RPC, no re-walk of the JSON tree).
+* `FILTER_KEYS`, `FILTER_LABELS`, `FILTER_DESCRIPTIONS` extended; `getNamesSummary()` now derives `filterCounts` / `filterLists` slot keys from `FILTER_KEYS` so future filters drop in without touching the scanner.
+* The `/names/filter/:filter` route was already filter-key-agnostic (reads `nameApi.FILTER_KEYS` at request time), so the new tiles work end-to-end on the cached background scan with zero added RPC load.
+* `views/snippets/utxo-set.pug` refactored to use a shared `+filterTile` mixin so the value-shape and DNS-record sections share rendering. Each tile carries an HTML tooltip describing the underlying ifa-0001 field convention.
+
 ##### nmc-3.6.8
 ###### 2026-05-02
 

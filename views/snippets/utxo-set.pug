@@ -86,21 +86,31 @@ else
 									span.text-muted …
 									div.small.text-muted.mt-1 Computing in background
 						if (namesSummary && namesSummary.filterCounts)
+							mixin filterTile(__f)
+								- var __c = namesSummary.filterCounts[__f.key] || 0
+								.col
+									a.text-decoration-none.d-block.h-100.p-3.rounded-2.border.border-card-highlight.text-body(href=`./names/filter/${__f.key}`, title=__f.title || "", data-bs-toggle=__f.title ? "tooltip" : null, data-bs-html="true")
+										div.small.text-muted= __f.label
+										div.h5.fw-light.mb-0.mt-1
+											span= __c.toLocaleString()
+										if (__c > 0 && namesSummary.active)
+											div.small.text-muted #{((__c / namesSummary.active) * 100).toFixed(1)}% of active
 							.mt-3
 								div.text-muted.small.text-uppercase.mb-2
-									span Filter
+									span Value-shape filters
 									span.ms-2.border-dotted(title="Counts of <em>active</em> names whose value carries each shape (valid JSON, .onion, TLSA records, IP addresses, Nostr identity, I2P address). Click any tile to see the matching names. Lists are sourced from the same 30-min background <code>name_scan</code> walk as the by-namespace breakdown above; per-filter lists are capped at 5,000 entries.", data-bs-toggle="tooltip", data-bs-html="true") (?)
 								.row.row-cols-2.row-cols-md-3.row-cols-lg-6.g-2
-									- var __filters = [{key:"json",label:"Valid JSON",icon:"bi-braces"},{key:"onion",label:".onion",icon:"bi-onion"},{key:"tls",label:"TLS",icon:"bi-shield-lock"},{key:"ip",label:"IP addresses",icon:"bi-hdd-network"},{key:"nostr",label:"Nostr",icon:"bi-broadcast-pin"},{key:"i2p",label:"I2P",icon:"bi-bezier2"}]
-									each __f in __filters
-										.col
-											a.text-decoration-none.d-block.h-100.p-3.rounded-2.border.border-card-highlight.text-body(href=`./names/filter/${__f.key}`)
-												div.small.text-muted= __f.label
-												div.h5.fw-light.mb-0.mt-1
-													- var __c = namesSummary.filterCounts[__f.key] || 0
-													span= __c.toLocaleString()
-												if (__c > 0 && namesSummary.active)
-													div.small.text-muted #{((__c / namesSummary.active) * 100).toFixed(1)}% of active
+									- var __filtersValue = [{key:"json",label:"Valid JSON",title:"Names whose value parses as JSON."},{key:"onion",label:".onion",title:"Names with a Tor v2/v3 onion address (<code>tor</code>/<code>_tor</code> field, or any <code>.onion</code> embedded in the value)."},{key:"tls",label:"TLSA",title:"Names that publish TLSA records (ifa-0001 §tls). Used for DANE TLS pinning, e.g. .bit relays."},{key:"ip",label:"IP addresses",title:"Names that publish at least one IP address (any of: <code>ip</code>, <code>ip4</code>, <code>ip6</code>, or a literal address in any string)."},{key:"nostr",label:"Nostr",title:"Names that publish a Nostr identity (single <code>nostr.pubkey</code> or multi-identity <code>nostr.names</code> map)."},{key:"i2p",label:"I2P",title:"Names that publish an I2P address (<code>i2p</code> field or <code>.b32.i2p</code> host)."}]
+									each __f in __filtersValue
+										+filterTile(__f)
+							.mt-4
+								div.text-muted.small.text-uppercase.mb-2
+									span DNS record filters
+									span.ms-2.border-dotted(title="Counts of <em>active</em> names that publish each DNS record type via ifa-0001 §map fields. Click any tile to see matching names. <ul class='mb-0 mt-2 ps-3 small'><li><b>A</b> — IPv4 (<code>ip</code> field)</li><li><b>AAAA</b> — IPv6 (<code>ip6</code> field)</li><li><b>CNAME</b> — alias (<code>alias</code>/<code>translate</code>)</li><li><b>NS</b> — nameserver delegation (<code>ns</code>)</li><li><b>MX</b> — mail exchange (<code>email</code>/<code>mx</code>)</li><li><b>TXT</b> — text records (<code>txt</code>)</li><li><b>SRV</b> — service location (<code>service</code>)</li><li><b>SOA</b> — start of authority (<code>soa</code>)</li><li><b>DS</b> — DNSSEC delegation signer (<code>ds</code>)</li><li><b>DNSSEC</b> — cryptographic validation (<code>dnssec</code>, <code>rrsig</code>, <code>dnskey</code>, <code>nsec</code>, <code>nsec3</code>, <code>ds</code>)</li></ul>", data-bs-toggle="tooltip", data-bs-html="true") (?)
+								.row.row-cols-2.row-cols-md-3.row-cols-lg-5.g-2
+									- var __filtersDns = [{key:"a",label:"A (IPv4)",title:"<b>A</b> — IPv4 address mapping. Names with <code>ip</code> field or any literal IPv4 in the value."},{key:"aaaa",label:"AAAA (IPv6)",title:"<b>AAAA</b> — IPv6 address mapping. Names with <code>ip6</code> field or any literal IPv6 in the value."},{key:"cname",label:"CNAME",title:"<b>CNAME</b> — Canonical name alias. Names with <code>alias</code> or <code>translate</code> field redirecting to another name."},{key:"ns",label:"NS",title:"<b>NS</b> — Nameserver delegation. Names with <code>ns</code> field delegating resolution authority."},{key:"mx",label:"MX",title:"<b>MX</b> — Mail exchange. Names with <code>email</code> shorthand or <code>mx</code> array."},{key:"txt",label:"TXT",title:"<b>TXT</b> — Text records. Names with <code>txt</code> field carrying arbitrary data (SPF, DKIM, verification, ad-hoc metadata)."},{key:"srv",label:"SRV",title:"<b>SRV</b> — Service location. Names with <code>service</code> field locating host:port for named services."},{key:"soa",label:"SOA",title:"<b>SOA</b> — Start of authority. Names with <code>soa</code> field declaring DNS zone authority."},{key:"ds",label:"DS",title:"<b>DS</b> — Delegation signer (DNSSEC). Names with <code>ds</code> field anchoring DNSSEC validation for a child zone."},{key:"dnssec",label:"DNSSEC",title:"<b>DNSSEC</b> — Cryptographic validation marker. Names with any of: <code>dnssec</code>, <code>rrsig</code>, <code>dnskey</code>, <code>nsec</code>, <code>nsec3</code>, or <code>ds</code> field."}]
+									each __f in __filtersDns
+										+filterTile(__f)
 
 						if (namesSummary && namesSummary.byNamespace && Object.keys(namesSummary.byNamespace).length)
 							.mt-3
