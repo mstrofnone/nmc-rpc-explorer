@@ -1,3 +1,15 @@
+##### nmc-3.6.12
+###### 2026-05-02
+
+**Move the Squatter leaderboards above the By namespace section.**
+
+Follow-up to nmc-3.6.11. Reorder the names breakdown area so the most
+attention-grabbing signal — "who is squatting how many names right
+now" — is the first thing the reader sees, with the per-namespace
+totals as supporting detail directly below. Updated the all-time
+squatter tooltip text from "By namespace section above" to "By
+namespace section below" to match the new ordering.
+
 ##### nmc-3.6.11
 ###### 2026-05-02
 

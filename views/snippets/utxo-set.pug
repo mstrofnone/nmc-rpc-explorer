@@ -112,35 +112,13 @@ else
 									each __f in __filtersDns
 										+filterTile(__f)
 
-						if (namesSummary && namesSummary.byNamespace && Object.keys(namesSummary.byNamespace).length)
-							.mt-3
-								div.text-muted.small.text-uppercase.mb-2
-									span By namespace
-									span.ms-2.border-dotted(title="Counts of names registered under each top-level namespace prefix (the part before the first <code>/</code>). <b>Active</b> names are still resolvable; <b>Expired</b> names live in the index but no longer resolve. Sourced from the same 30-min background <code>name_scan</code> walk.", data-bs-toggle="tooltip", data-bs-html="true") (?)
-								.table-responsive
-									table.table.table-sm.table-borderless.mb-0.small
-										thead
-											tr
-												th.text-card-highlight.fw-light.text-uppercase NS
-												th.text-end.text-card-highlight.fw-light.text-uppercase Active
-												th.text-end.text-card-highlight.fw-light.text-uppercase Expired
-												th.text-end.text-card-highlight.fw-light.text-uppercase Total
-												th.d-none.d-md-table-cell.text-card-highlight.fw-light.text-uppercase Description
-										tbody
-											- var __nsKeys = Object.keys(namesSummary.byNamespace).sort((a,b) => namesSummary.byNamespace[b].active - namesSummary.byNamespace[a].active)
-											each __ns in __nsKeys
-												- var __row = namesSummary.byNamespace[__ns]
-												tr
-													td.font-monospace= __ns === "(none)" ? "—" : (__ns + "/")
-													td.text-end= __row.active.toLocaleString()
-													td.text-end.text-muted= __row.expired.toLocaleString()
-													td.text-end= __row.total.toLocaleString()
-													td.d-none.d-md-table-cell.text-muted.small= __ns === "(none)" ? "" : (nameApi && nameApi.namespaceLabel ? (nameApi.namespaceLabel(__ns) || "") : "")
-
 						// Squatter leaderboards: groups of names that share an exact
 						// identical value. The largest cluster of active names is the
 						// "biggest current squatter"; the largest cluster across
-						// active+expired is the "biggest all-time squatter".
+						// active+expired is the "biggest all-time squatter". Rendered
+						// ABOVE the per-namespace breakdown so the most attention-grabbing
+						// signal ("who is squatting how many names right now") is the
+						// first thing the reader sees in the names breakdown area.
 						mixin squatterTable(__rows, __mode)
 							.table-responsive
 								table.table.table-sm.table-borderless.mb-0.small
@@ -187,7 +165,7 @@ else
 															| , 
 
 						if (namesSummary && namesSummary.squattersCurrent && namesSummary.squattersCurrent.length)
-							.mt-4
+							.mt-3
 								div.text-muted.small.text-uppercase.mb-2
 									span Biggest current squatter
 									span.ms-2.border-dotted(title="Groups of <em>currently active</em> names whose value is byte-for-byte identical. Bulk registrations from a single operator (typo-squat farms, parking pages, drainer farms, IPFS gateways, sinkholes, mass-mirrored content) almost always reuse one template value across thousands of names — the largest such cluster is the biggest current squatter on chain. <br><br><b>How calculated:</b> during the same 30-min background <code>name_scan</code> walk that powers the by-namespace and value-shape sections, every active name's exact value string is hashed into a bucket; clusters with at least #{namesSummary.squatterMinCount || 2} active names are ranked, top #{namesSummary.squatterTopN || 10} shown. Empty values (newly-registered <code>name_new</code> placeholders) are skipped. Ties are broken by total (active+expired) cluster size.", data-bs-toggle="tooltip", data-bs-html="true") (?)
@@ -197,8 +175,33 @@ else
 							.mt-4
 								div.text-muted.small.text-uppercase.mb-2
 									span Biggest all-time squatter
-									span.ms-2.border-dotted(title="Groups of names whose value is byte-for-byte identical, this time counting <em>both active and expired</em> names — the all-time scope mirrors the Active+Expired+Total columns of the <em>By namespace</em> section above. Captures squatter farms whose registrations have lapsed but still live in the name database. <br><br><b>How calculated:</b> same per-value bucketing as <em>Biggest current squatter</em>, but ranked by <em>total</em> cluster size (active + expired) instead of just active. Clusters with at least #{namesSummary.squatterMinCount || 2} names are ranked, top #{namesSummary.squatterTopN || 10} shown. Empty values are skipped. Ties are broken by active count.", data-bs-toggle="tooltip", data-bs-html="true") (?)
+									span.ms-2.border-dotted(title="Groups of names whose value is byte-for-byte identical, this time counting <em>both active and expired</em> names — the all-time scope mirrors the Active+Expired+Total columns of the <em>By namespace</em> section below. Captures squatter farms whose registrations have lapsed but still live in the name database. <br><br><b>How calculated:</b> same per-value bucketing as <em>Biggest current squatter</em>, but ranked by <em>total</em> cluster size (active + expired) instead of just active. Clusters with at least #{namesSummary.squatterMinCount || 2} names are ranked, top #{namesSummary.squatterTopN || 10} shown. Empty values are skipped. Ties are broken by active count.", data-bs-toggle="tooltip", data-bs-html="true") (?)
 								+squatterTable(namesSummary.squattersAllTime, "alltime")
+
+						if (namesSummary && namesSummary.byNamespace && Object.keys(namesSummary.byNamespace).length)
+							.mt-4
+								div.text-muted.small.text-uppercase.mb-2
+									span By namespace
+									span.ms-2.border-dotted(title="Counts of names registered under each top-level namespace prefix (the part before the first <code>/</code>). <b>Active</b> names are still resolvable; <b>Expired</b> names live in the index but no longer resolve. Sourced from the same 30-min background <code>name_scan</code> walk.", data-bs-toggle="tooltip", data-bs-html="true") (?)
+								.table-responsive
+									table.table.table-sm.table-borderless.mb-0.small
+										thead
+											tr
+												th.text-card-highlight.fw-light.text-uppercase NS
+												th.text-end.text-card-highlight.fw-light.text-uppercase Active
+												th.text-end.text-card-highlight.fw-light.text-uppercase Expired
+												th.text-end.text-card-highlight.fw-light.text-uppercase Total
+												th.d-none.d-md-table-cell.text-card-highlight.fw-light.text-uppercase Description
+										tbody
+											- var __nsKeys = Object.keys(namesSummary.byNamespace).sort((a,b) => namesSummary.byNamespace[b].active - namesSummary.byNamespace[a].active)
+											each __ns in __nsKeys
+												- var __row = namesSummary.byNamespace[__ns]
+												tr
+													td.font-monospace= __ns === "(none)" ? "—" : (__ns + "/")
+													td.text-end= __row.active.toLocaleString()
+													td.text-end.text-muted= __row.expired.toLocaleString()
+													td.text-end= __row.total.toLocaleString()
+													td.d-none.d-md-table-cell.text-muted.small= __ns === "(none)" ? "" : (nameApi && nameApi.namespaceLabel ? (nameApi.namespaceLabel(__ns) || "") : "")
 
 				if (utxoSetSummary.usingCoinStatsIndex)
 					span.small.text-muted Note: The above UTXO Set snapshot was produced using this node's <b>coin-stats index</b>; using this index affects which properties are available. Comparing the data above to a UTXO Set snapshot produced on a node without the coin-stats index enabled will look slightly different.
