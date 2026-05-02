@@ -10,9 +10,17 @@ block content
 		pre
 			code #{JSON.stringify(transactions, null, 4)}
 
+	if (typeof nameOpsTotal === "number" && nameOpsTotal > 0)
+		.alert.alert-info.mb-3.small.d-flex.align-items-center
+			i.bi-tag-fill.me-2.text-warning
+			div
+				span.fw-bold #{nameOpsTotal.toLocaleString()} name operation#{nameOpsTotal === 1 ? "" : "s"}
+				span.ms-1 visible on this page.
+				a.ms-2(href="./mempool-name-ops") See all mempool name ops &raquo;
+
 	if (txCount > 0)
 		+contentSection(`${txCount.toLocaleString()} Transaction${txCount == 1 ? "" : "s"}`, false, null, false, false)
-			+txList(transactions, txCount, limit, offset, txInputsByTransaction, {mempoolDetailsByTxid:mempoolDetailsByTxid})
+			+txList(transactions, txCount, limit, offset, txInputsByTransaction, {mempoolDetailsByTxid:mempoolDetailsByTxid, nameOpsByTxid:nameOpsByTxid})
 
 				
 	else

@@ -1,0 +1,52 @@
+// Shared rendering for name operations attached to a transaction.
+// Used by next-block, mempool-transactions, mempool-name-ops, and the
+// per-tx panel on transaction.pug. Keeps the visual language consistent
+// across every page that surfaces name ops.
+
+mixin nameOpBadge(op)
+	case op
+		when "name_new"
+			span.badge.bg-secondary.fw-normal name_new
+		when "name_firstupdate"
+			span.badge.bg-success.fw-normal name_firstupdate
+		when "name_update"
+			span.badge.bg-primary.fw-normal name_update
+		default
+			span.badge.bg-dark.fw-normal= op
+
+// Compact "this tx contains N name op(s)" badge for inline use in tx lists.
+// Pass the array of name-op rows for one txid.
+mixin nameOpInlineBadges(rows)
+	if (rows && rows.length)
+		each row in rows
+			span.me-2(data-bs-toggle="tooltip", title=row.name ? `${row.op}: ${row.name}` : row.op)
+				+nameOpBadge(row.op)
+				if (row.name)
+					a.ms-1.font-monospace.small(href=`./name/${encodeURIComponent(row.name)}`)= row.name
+
+// Full per-op panel: op badge + name link + decoded value (truncated).
+// Suitable for a content-section under a tx row in mempool/next-block views.
+// `row` shape: { op, txid, vout, name, namespace, valueRender, hash, rand }
+mixin nameOpRowCompact(row)
+	.border-start.border-3.border-warning.ps-3.py-2.mb-2
+		.d-flex.flex-wrap.align-items-center.gap-2.mb-1
+			+nameOpBadge(row.op)
+			if (row.name)
+				a.font-monospace(href=`./name/${encodeURIComponent(row.name)}`)= row.name
+				if (row.namespace && row.namespace.namespace)
+					span.badge.bg-secondary.fw-light= row.namespace.namespace
+			if (row.vout !== null)
+				span.text-muted.small vout #{row.vout}
+
+		if (row.op === "name_new")
+			div.text-muted.small.mb-1 Pre-image hash (the actual name is hidden until <code>name_firstupdate</code>)
+			div.font-monospace.small.text-break= row.hash
+		else if (row.valueRender && row.valueRender.display)
+			div.text-muted.small.mb-1
+				| Value
+				if (row.valueRender.kind === "json")
+					span.ms-2.small (JSON)
+				else if (row.value_encoding && row.value_encoding !== "ascii")
+					span.ms-2.small= row.value_encoding
+			pre.bg-body-tertiary.p-2.rounded-1.small.mb-0.text-break(style="max-height: 12rem; overflow: auto;")
+				code= row.valueRender.display

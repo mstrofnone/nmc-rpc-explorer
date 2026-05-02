@@ -1,3 +1,23 @@
+##### nmc-3.6.4
+###### 2026-05-02
+
+Surface name operations and the names they touch on `/next-block` and `/mempool-transactions`.
+
+Until now the only mempool/next-block surface that revealed name operations was `/mempool-name-ops`. The general transaction lists hid them — a `name_firstupdate` was indistinguishable from any other tx in `/mempool-transactions`, and operators couldn't see at a glance which names were about to land in the next block.
+
+* **`/next-block`** — the route now calls `name_pending` once and intersects by txid against the `getblocktemplate` candidate set. The view gains:
+  * a “N name op(s)” badge on the Summary card,
+  * a dedicated “Name operation(s)” content section above the transaction table, listing every (txid, op, name, decoded value) carried by the candidate block,
+  * a small `bi-tag-fill` icon next to the txid in the existing transaction table for any tx that carries a name op.
+  Cost: one extra `name_pending` RPC per `/next-block` render; the call is O(name-ops-in-mempool), not O(mempool size).
+
+* **`/mempool-transactions`** — the route runs the existing `nameApi.collectNameOps()` over the visible page of verbose mempool transactions (no extra RPC — the data is already on `vout[].scriptPubKey.nameOp`). The shared `+txList` mixin gains a `nameOpsByTxid` option that:
+  * shows an inline `name_*` badge + linked `d/...`/`id/...`/etc. name next to the txid,
+  * adds an expanded “Name operation(s)” panel underneath the IO details for any affected tx, with namespace tag, decoded JSON value (truncated, scrollable), and (for `name_new`) the pre-image hash.
+  An info banner at the top of the page summarises the count and links to `/mempool-name-ops` for the chain-wide view.
+
+* **New shared mixin file** — `views/includes/name-op-mixins.pug` defines `+nameOpBadge`, `+nameOpInlineBadges`, and `+nameOpRowCompact`, included from `shared-mixins.pug` so any page that extends `layout` can render name ops with consistent visual language. Future pages (block detail, address detail) can plug in by passing a `nameOpsByTxid` map.
+
 ##### nmc-3.6.3
 ###### 2026-05-02
 

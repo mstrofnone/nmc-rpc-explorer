@@ -18,6 +18,10 @@ block content
 				+summaryRow(3)
 					+summaryItem("Transactions")
 						| #{blockTemplate.transactions.length.toLocaleString()}
+						if (typeof nameOpsTotal === "number" && nameOpsTotal > 0)
+							span.ms-2.badge.bg-warning.text-dark.fw-normal(title="Name operations carried by transactions in this block template", data-bs-toggle="tooltip")
+								i.bi-tag-fill.me-1
+								| #{nameOpsTotal.toLocaleString()} name op#{nameOpsTotal === 1 ? "" : "s"}
 
 
 					+summaryItem("Fee Rates", "Minimum / Median / Maximum fee rates for transaction expected to be included in the next block.", "sat/vB")
@@ -43,6 +47,25 @@ block content
 						- var totalFees = new Decimal(blockTemplate.coinbasevalue).dividedBy(coinConfig.baseCurrencyUnit.multiplier).minus(subsidy);
 
 						+valueDisplay(totalFees)
+
+			// Name operations carried by this candidate block, surfaced on top so
+			// the chain-state implications are visible at a glance (which names
+			// are about to register / update / be committed in the next ~10min).
+			if (typeof nameOpsTotal === "number" && nameOpsTotal > 0)
+				+contentSection(`Name operation${nameOpsTotal === 1 ? "" : "s"} (${nameOpsTotal})`)
+					p.text-muted.small.mb-3 These transactions are in the next-block candidate AND carry a Namecoin name operation. Hash-only <code>name_new</code> commitments hide the name; the actual name only appears on the corresponding <code>name_firstupdate</code>.
+					each rows, txid in nameOpsByTxid
+						.mb-3.pb-3(class=Object.keys(nameOpsByTxid)[Object.keys(nameOpsByTxid).length - 1] === txid ? "" : "border-bottom")
+							.mb-2.small
+								span.text-muted.me-2 tx
+								a.font-monospace(href=`./tx/${txid}`)= utils.ellipsizeMiddle(txid, 32)
+							each row in rows
+								+nameOpRowCompact(row)
+			else if (nameOpsError)
+				+contentSection("Name operations")
+					.alert.alert-warning.mb-0.small
+						div.fw-bold.mb-1 <code>name_pending</code> RPC error
+						div.font-monospace.small= nameOpsError
 
 			if (true)
 				+contentSection(blockTemplate.transactions.length.toLocaleString() + " Transaction" + (blockTemplate.transactions.length == 1 ? "" : "s"))
@@ -70,6 +93,10 @@ block content
 
 										td
 											a(href=`./tx/${tx.txid}`) #{utils.ellipsizeMiddle(tx.txid, 16)}
+											if (nameOpsByTxid && nameOpsByTxid[tx.txid])
+												each __op in nameOpsByTxid[tx.txid]
+													span.ms-2(data-bs-toggle="tooltip", title=__op.name ? `${__op.op}: ${__op.name}` : __op.op)
+														i.bi-tag-fill.text-warning
 
 										td.text-end
 											| #{new Decimal(tx.fee).dividedBy(tx.weight).times(4).toDP(2)}

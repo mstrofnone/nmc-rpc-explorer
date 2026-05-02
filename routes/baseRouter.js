@@ -866,6 +866,45 @@ router.get("/mining-template", asyncHandler(async (req, res, next) => {
 router.get("/next-block", asyncHandler(async (req, res, next) => {
 	const blockTemplate = await coreApi.getBlockTemplate();
 
+	// Decorate the next-block transaction list with any pending name operations.
+	// `getblocktemplate` returns stripped txs (no `vout[].scriptPubKey.nameOp`),
+	// so we ask Namecoin Core for `name_pending` once and intersect by txid.
+	// O(name-ops-in-mempool), not O(mempool size).
+	let pendingNameOps = [];
+	let pendingNameOpsError = null;
+	try {
+		const pending = await nameApi.namePending();
+		if (Array.isArray(pending)) pendingNameOps = pending;
+	} catch (err) {
+		pendingNameOpsError = err.message || String(err);
+	}
+
+	const nameOpsByTxid = {};
+	const nextBlockTxidSet = new Set(blockTemplate.transactions.map(t => t.txid));
+	for (const p of pendingNameOps) {
+		if (!p || !p.op || !p.txid) continue;
+		if (!nextBlockTxidSet.has(p.txid)) continue;
+		const valueRender = nameApi.renderNameValue(p.value, p.value_encoding);
+		const row = {
+			op: p.op,
+			txid: p.txid,
+			vout: typeof p.vout === "number" ? p.vout : null,
+			name: p.name || null,
+			name_encoding: p.name_encoding || null,
+			namespace: p.name ? nameApi.splitNamespace(p.name) : null,
+			value: p.value || null,
+			value_encoding: p.value_encoding || null,
+			valueRender,
+			hash: p.hash || null,
+			rand: p.rand || null,
+		};
+		if (!nameOpsByTxid[p.txid]) nameOpsByTxid[p.txid] = [];
+		nameOpsByTxid[p.txid].push(row);
+	}
+	res.locals.nameOpsByTxid = nameOpsByTxid;
+	res.locals.nameOpsTotal = Object.values(nameOpsByTxid).reduce((n, arr) => n + arr.length, 0);
+	res.locals.nameOpsError = pendingNameOpsError;
+
 	res.locals.minFeeRate = 1000000;
 	res.locals.maxFeeRate = -1;
 	res.locals.medianFeeRate = -1;
@@ -2153,6 +2192,34 @@ router.get("/mempool-transactions", asyncHandler(async (req, res, next) => {
 
 
 		await utils.awaitPromises(promises);
+
+		// Decorate any tx in the visible page that carries a name operation.
+		// `getRawTransactionsWithInputs` returns verbose txs, so the name-op
+		// data lives on `vout[].scriptPubKey.nameOp` already — just collect it.
+		res.locals.nameOpsByTxid = {};
+		try {
+			const ops = nameApi.collectNameOps(res.locals.transactions || []);
+			for (const op of ops) {
+				const row = {
+					op: op.op,
+					txid: op.txid,
+					vout: typeof op.vout === "number" ? op.vout : null,
+					name: op.name || null,
+					name_encoding: op.name_encoding || null,
+					namespace: op.name ? nameApi.splitNamespace(op.name) : null,
+					value: op.value || null,
+					value_encoding: op.value_encoding || null,
+					valueRender: nameApi.renderNameValue(op.value, op.value_encoding),
+					hash: op.hash || null,
+					rand: op.rand || null,
+				};
+				if (!res.locals.nameOpsByTxid[op.txid]) res.locals.nameOpsByTxid[op.txid] = [];
+				res.locals.nameOpsByTxid[op.txid].push(row);
+			}
+		} catch (e) {
+			utils.logError("mempoolTxNameOps01", e);
+		}
+		res.locals.nameOpsTotal = Object.values(res.locals.nameOpsByTxid).reduce((n, arr) => n + arr.length, 0);
 
 
 		await utils.timePromise("mempool-transactions.render", async () => {
