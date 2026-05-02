@@ -184,6 +184,16 @@ $header-footer-bg: #112138;
 	color: $body-color;
 }
 
+// Bootstrap's .bg-body-tertiary resolves to a near-white that clashes with the
+// dark theme (text becomes invisible against it). Re-target the JSON/value
+// <pre> blocks (mempool-name-ops, name, transaction views) to a dark surface
+// that matches .card-highlight. See explorer.txt for the deploy story.
+pre.bg-body-tertiary {
+	background-color: lighten($card-bg, 5%) !important;
+	border: solid 1px lighten($card-bg, 10%);
+	color: $body-color;
+}
+
 .text-card-highlight {
 	color: $card-highlight-color !important;
 }

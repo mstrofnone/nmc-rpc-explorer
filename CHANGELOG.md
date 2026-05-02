@@ -1,3 +1,12 @@
+##### nmc-3.6.2
+###### 2026-05-02
+
+Fix abrasive white background on JSON/value `<pre>` blocks under the dark themes.
+
+* Bootstrap's `bg-body-tertiary` utility resolves to a near-white in our dark themes (`#f8f9fa`) which clashed with the rest of the page (`#112138` body, `#1a2433` cards) and reduced contrast against the near-white body text to nearly nothing — the value text was effectively invisible on `/mempool-name-ops`, `/name/...`, and `/tx/...`.
+* Re-target `pre.bg-body-tertiary` to a dark surface that matches `.card-highlight` (`lighten($card-bg, 5%)` background, `lighten($card-bg, 10%)` border, `$body-color` text) in `dark.scss` and `dark-v1.scss`. Light theme is intentionally untouched — the original `bg-body-tertiary` is fine there.
+* Bumps `package.json` to `3.6.2` (see `nmc-3.6.1` note: changed CSS asset must move the `?v=<cacheId>` URL).
+
 ##### nmc-3.6.1
 ###### 2026-05-02
 
