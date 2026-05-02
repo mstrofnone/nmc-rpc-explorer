@@ -41,7 +41,7 @@ block content
 				+summaryItem("Avg Fee")
 					span#avg-fee
 
-				+summaryItem("Avg Fee Rate", null, "sat/vB")
+				+summaryItem("Avg Fee Rate", null, "swartz/vB")
 					span#avg-fee-rate
 
 		+contentSection("Estimate Block Depth")
@@ -52,7 +52,7 @@ block content
 					.me-4.d-inline-block.mb-3
 						h6.text-card-highlight.fw-light
 							span.text-uppercase Fee Rate
-							small.ms-1 (sat/vB)
+							small.ms-1 (swartz/vB)
 
 						- var feeRatesToEstimate = [1, 2, 3, 4, 5, 15, 25, 50, 75, 100, 150];
 
@@ -73,11 +73,11 @@ block content
 					.me-4.d-inline-block.mb-3
 						h6.text-card-highlight.fw-light
 							span.text-uppercase Custom Fee Rate
-							small.ms-1 (sat/vB)
+							small.ms-1 (swartz/vB)
 
 						form.form-inline(method="post", action="javascript:void(0)", onsubmit=`estimateMempoolDepth($("#customFeeRate").val()); return false;` style="width: 200px;")
 							.input-group.input-group
-								input.form-control.form-control(id="customFeeRate", type="text", name="customFeeRate", placeholder="sat/vB", value=(customFeeRate))
+								input.form-control.form-control(id="customFeeRate", type="text", name="customFeeRate", placeholder="swartz/vB", value=(customFeeRate))
 								
 								button.btn.btn-primary(type="submit", aria-label="Search")
 									i.bi-search
@@ -85,7 +85,7 @@ block content
 			hr.mt-1.mb-3
 
 			+summaryRow(3)
-				+summaryItem("Fee Rate", null, "sat/vB")
+				+summaryItem("Fee Rate", null, "swartz/vB")
 					span#estimate-fee-rate -
 
 				+summaryItem("Est. Block Depth")
@@ -117,7 +117,7 @@ block content
 								th.text-end.text-card-highlight.text-uppercase.fw-light Avg Fee
 								th.text-end.text-card-highlight.fw-light
 									span.text-uppercase Avg Fee Rate
-									small.ms-1 (sat/vB)
+									small.ms-1 (swartz/vB)
 						tbody(id="fee-rate-table-body")
 							tr(id="fee-rate-table-row-prototype", style="display: none;")
 								td.data-label
@@ -150,7 +150,7 @@ block content
 										th.text-card-highlight.text-uppercase.fw-light Txid
 										th.text-end.text-card-highlight.fw-light
 											span.text-uppercase Fee Rate
-											span.ms-2 (sat/vB)
+											span.ms-2 (swartz/vB)
 
 								tbody(id="topfee-tx-table-body")
 									tr(id="topfee-tx-table-row-prototype", style="display: none;")
@@ -360,7 +360,7 @@ block endOfBody
 							},
 							title: {
 								display: true,
-								text: "Fee Rate (sat/vB)"
+								text: "Fee Rate (swartz/vB)"
 							},
 						},
 						y: {

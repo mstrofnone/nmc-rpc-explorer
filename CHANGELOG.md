@@ -1,3 +1,16 @@
+##### nmc-3.6.3
+###### 2026-05-02
+
+Fix `/utxo-set` (Namecoin Core response shape mismatch + page crash on missing data) and rebrand `/mempool-summary` fee-rate units from `sat/vB` to `swartz/vB`.
+
+* **`/utxo-set`** — root cause: Namecoin Core's `gettxoutsetinfo` returns the totals nested under `amount` (`{ coins, names, total }`) instead of Bitcoin Core's flat `total_amount` field, so `coreApi.getUtxoSetSummary` always saw an undefined `total_amount`, returned `null`, and the page crashed in `views/snippets/utxo-set.pug` with `Cannot read properties of null (reading 'lastUpdated')`.
+  * `app/api/coreApi.js`: when the response carries `amount` but no `total_amount`, surface `amount.total` as `total_amount` (and keep `amount.coins`/`amount.names` available as `total_coins_amount`/`total_names_amount` for views that want the breakdown).
+  * `views/snippets/utxo-set.pug`: when `utxoSetSummary` is null, render a friendly warning panel that explains the two common causes (no `coinstatsindex` + slow scans, or `BTCEXP_SLOW_DEVICE_MODE=true`) and the recommended fix, instead of crashing the page render.
+  * Add an optional Namecoin-only "Coins (currency) / Names (locked)" breakdown row beneath the standard summary when `coins`/`names` are available.
+  * Rename the BTC-flavoured copy on the Coins summary item to NMC.
+
+* **`/mempool-summary` units** — replace `sat/vB` with `swartz/vB` in all 8 callsites of `views/mempool-summary.pug` (column headers, summary items, custom-rate placeholder, fee-rate chart axis label). Other fee-rate views (`/next-block`, `/transaction`, `/block`, `/predicted-blocks`, `/block-analysis`, `/projected-blocks-old`, plus the index next-block snippet, `index-network-summary`, `blocks-list`, and `shared-mixins`) still say `sat/vB` — those are deliberately left alone in this PR; rename to follow.
+
 ##### nmc-3.6.2
 ###### 2026-05-02
 
