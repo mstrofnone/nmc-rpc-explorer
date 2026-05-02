@@ -868,23 +868,32 @@ async function refreshNamesSummary() {
 }
 
 async function refreshUtxoSetSummary() {
+	// Even on slow-device-mode nodes WITHOUT coinstatsindex we do still want
+	// the UTXO summary populated — otherwise the on-disk file cache (used by
+	// the /utxo-set page when `global.utxoSetSummary` is null) ages out and
+	// the page silently shows hours-old data. The slow `gettxoutsetinfo`
+	// call (~88s on Namecoin without coinstatsindex) runs on the dedicated
+	// no-timeout RPC client off the request path, on a 30-min interval, so
+	// it doesn't affect interactive page loads. The original skip behaviour
+	// only made sense when the explorer had no other way to surface the data.
 	if (config.slowDeviceMode) {
 		if (!global.getindexinfo || !global.getindexinfo.coinstatsindex) {
-			global.utxoSetSummary = null;
-			global.utxoSetSummaryPending = false;
-
-			debugLog("Skipping performance-intensive task: fetch UTXO set summary. This is skipped due to the flag 'slowDeviceMode' which defaults to 'true' to protect slow nodes. Set this flag to 'false' to enjoy UTXO set summary details.");
-
-			return;
+			debugLog("refreshUtxoSetSummary: slowDeviceMode=true and no coinstatsindex; running anyway via no-timeout RPC client so the file cache stays fresh.");
+			// fall through to the refresh below
 		}
 	}
 
 	// flag that we're working on calculating UTXO details (to differentiate cases where we don't have the details and we're not going to try computing them)
 	global.utxoSetSummaryPending = true;
 
-	global.utxoSetSummary = await coreApi.getUtxoSetSummary(true, false);
-
-	debugLog("Refreshed utxo summary: " + JSON.stringify(global.utxoSetSummary));
+	try {
+		global.utxoSetSummary = await coreApi.getUtxoSetSummary(true, false);
+		debugLog("Refreshed utxo summary: lastUpdated=" + (global.utxoSetSummary && global.utxoSetSummary.lastUpdated));
+	} catch (e) {
+		utils.logError("refreshUtxoSetSummary failed", e);
+	} finally {
+		global.utxoSetSummaryPending = false;
+	}
 }
 
 function refreshNetworkVolumes() {

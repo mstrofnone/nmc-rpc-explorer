@@ -287,11 +287,26 @@ function getBlockStatsByHeight(height) {
 
 const utxoSetFileCache = utils.fileCache(config.filesystemCacheDir, `utxo-set`);
 
+// Maximum age (ms) for the on-disk utxo-set cache before we consider it stale
+// and trigger a fresh RPC fetch. Without this guard the cache file lives
+// forever and the /utxo-set page silently shows hours-old data when
+// `slowDeviceMode=true` is suppressing the periodic refresh.
+const UTXO_FILE_CACHE_MAX_AGE_MS = 30 * 60 * 1000; // 30 minutes
+
 function getUtxoSetSummary(useCoinStatsIndexIfAvailable=true, useCacheIfAvailable=true) {
 	return tryCacheThenRpcApi(miscCache, "getUtxoSetSummary", FIFTEEN_MIN, async () => {
 		let utxoSetSummary = utxoSetFileCache.tryLoadJson();
 
-		if (utxoSetSummary && useCacheIfAvailable) {
+		// Treat the on-disk cache as fresh only when (a) the caller is willing
+		// to use a cache AND (b) the cache hasn't aged past UTXO_FILE_CACHE_MAX_AGE_MS.
+		// `lastUpdated` was added at write time below; older caches without that
+		// field are treated as stale so the next render forces a refresh.
+		const cacheAgeMs = (utxoSetSummary && utxoSetSummary.lastUpdated)
+			? (Date.now() - utxoSetSummary.lastUpdated)
+			: Infinity;
+		const cacheUsable = utxoSetSummary && useCacheIfAvailable && cacheAgeMs < UTXO_FILE_CACHE_MAX_AGE_MS;
+
+		if (cacheUsable) {
 			return utxoSetSummary;
 
 		} else {

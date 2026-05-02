@@ -1,3 +1,23 @@
+##### nmc-3.6.10
+###### 2026-05-02
+
+**Stop `/utxo-set` from showing hours-old data on slow-device-mode nodes.**
+
+The `/utxo-set` page was rendering `Last Updated 00:17 UTC (1h56m ago)` (or worse) on production because of a two-layer caching bug:
+
+1. `getUtxoSetSummary(useCache=true)` was returning the on-disk file cache (`cache/utxo-set.json`) without checking its age. So even when the file was hours stale, every render of `/utxo-set` happily returned the same old snapshot.
+2. `refreshUtxoSetSummary()` (the 30-min background task that should have been overwriting that file cache) was being skipped on every tick when `BTCEXP_SLOW_DEVICE_MODE=true` AND the node didn't have `coinstatsindex` enabled. So the cache file was written ONCE at first boot and never updated.
+
+The combined effect: the page silently shows whatever was true at the explorer's last boot, possibly hours or days ago, with no indication it's stale.
+
+**Fix:**
+
+- `getUtxoSetSummary()` now checks `cacheAgeMs < UTXO_FILE_CACHE_MAX_AGE_MS` (30 min) before returning the on-disk file cache. Older caches are treated as stale and force a fresh `gettxoutsetinfo` RPC call. Caches without a `lastUpdated` field (legacy) are also treated as stale.
+- `refreshUtxoSetSummary()` no longer aborts under slow-device-mode. The slow `gettxoutsetinfo` call (~88s on a Namecoin node without coinstatsindex) runs on the dedicated **no-timeout RPC client** off the request path, on a 30-min interval, so it never blocks an interactive page load. The original early-return only made sense when the explorer had no other way to surface the data; with the file cache also stale-checked, the right behaviour is always-refresh-in-background.
+- Wrapped the refresh in try/catch/finally so a transient RPC failure doesn't leave `utxoSetSummaryPending=true` stuck.
+
+Operators who genuinely want zero `gettxoutsetinfo` load can still flip a future `BTCEXP_DISABLE_UTXO_SET_REFRESH` env (TODO if anyone asks) — but for the common case of "slow node that should still show fresh data once every 30 min", this is a no-config-change improvement.
+
 ##### nmc-3.6.9
 ###### 2026-05-02
 
