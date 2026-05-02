@@ -20,6 +20,7 @@ const coins = require("./../app/coins.js");
 const config = require("./../app/config.js");
 const utils = require('./../app/utils.js');
 const coreApi = require("./../app/api/coreApi.js");
+const nameApi = require("./../app/api/nameApi.js");
 const addressApi = require("./../app/api/addressApi.js");
 const xyzpubApi = require("./../app/api/xyzpubApi.js");
 const rpcApi = require("./../app/api/rpcApi.js");
@@ -897,6 +898,123 @@ router.get("/mining/miner-summary", asyncHandler(async (req, res, next) => {
 
 
 
+
+
+/// NAMES (Namecoin)
+
+// Per-name lookup. Returns Namecoin Core's `name_show` payload, with a few
+// derived fields the explorer cares about (decoded value preview, namespace,
+// nostr identities embedded in the value, ifa-0001 imports).
+router.get("/name/:name", asyncHandler(async (req, res, next) => {
+	try {
+		const name = req.params.name;
+		const raw = await nameApi.nameShow(name);
+		if (!raw) {
+			res.status(404).json({ error: "name not found", name });
+			return next();
+		}
+		const valueRender = nameApi.renderNameValue(raw.value, raw.value_encoding);
+		let imports = [];
+		let identities = null;
+		let nameIdFields = [];
+		if (valueRender.kind === "json" && valueRender.parsed) {
+			imports = nameApi.collectAllImports(valueRender.parsed);
+			identities = nameApi.parseNostrIdentities(valueRender.parsed, name);
+			nameIdFields = nameApi.parseNameIdFields(valueRender.parsed);
+		}
+		res.json({
+			name: raw.name,
+			name_encoding: raw.name_encoding,
+			value: raw.value,
+			value_encoding: raw.value_encoding,
+			txid: raw.txid,
+			vout: raw.vout,
+			address: raw.address,
+			height: raw.height,
+			expires_in: raw.expires_in,
+			expired: raw.expired,
+			namespace: nameApi.splitNamespace(name),
+			valueParsed: valueRender.parsed || null,
+			valueKind: valueRender.kind,
+			imports,
+			identities,
+			nameIdFields,
+		});
+		next();
+	} catch (err) {
+		res.status(500).json({ error: err.message || String(err) });
+		next();
+	}
+}));
+
+// History of a single name. Wraps `name_history`. The full chain of
+// {op, value, height, txid} for the lifetime of the name.
+router.get("/name/:name/history", asyncHandler(async (req, res, next) => {
+	try {
+		const name = req.params.name;
+		const rows = await nameApi.nameHistory(name);
+		res.json(Array.isArray(rows) ? rows : []);
+		next();
+	} catch (err) {
+		res.status(500).json({ error: err.message || String(err) });
+		next();
+	}
+}));
+
+// Paginated name enumeration. Wraps `name_scan` start/count.
+router.get("/names", asyncHandler(async (req, res, next) => {
+	try {
+		const start = req.query.start || "";
+		const count = Math.min(parseInt(req.query.count || "50", 10) || 50, 500);
+		const prefix = req.query.prefix || null;
+		const params = [start, count];
+		if (prefix) params.push({ prefix });
+		const rows = await coreApi.tryRpcCmd ? null : null;
+		// Use nameApi's RPC pipe directly (mirrors /name/:name path).
+		const raw = await require("./../app/api/rpcApi.js").getRpcDataWithParams({ method: "name_scan", parameters: params });
+		res.json((raw || []).map((r) => ({
+			name: r.name,
+			height: r.height,
+			txid: r.txid,
+			vout: r.vout,
+			address: r.address,
+			expires_in: r.expires_in,
+			expired: r.expired,
+			namespace: nameApi.splitNamespace(r.name),
+		})));
+		next();
+	} catch (err) {
+		res.status(500).json({ error: err.message || String(err) });
+		next();
+	}
+}));
+
+// Cached counts (active/expired/total + per-namespace) refreshed every 30 min.
+router.get("/names/summary", function (req, res, next) {
+	res.json({
+		namesSummary: global.namesSummary || null,
+		namesSummaryPending: !!global.namesSummaryPending,
+	});
+	next();
+});
+
+// Pending name operations in the mempool. Wraps `name_pending`.
+router.get("/names/pending", asyncHandler(async (req, res, next) => {
+	try {
+		const rows = await nameApi.namePending();
+		res.json(Array.isArray(rows) ? rows : []);
+		next();
+	} catch (err) {
+		res.status(500).json({ error: err.message || String(err) });
+		next();
+	}
+}));
+
+// Last-24h name vs currency tx breakdown.
+router.get("/names/tx-stats", function (req, res, next) {
+	res.json(global.nameTxStats || null);
+	next();
+});
 
 
 /// MEMPOOL

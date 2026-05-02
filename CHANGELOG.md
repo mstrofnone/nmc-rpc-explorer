@@ -1,3 +1,30 @@
+##### nmc-3.6.5
+###### 2026-05-02
+
+Clarify the Namecoin metrics on `/utxo-set`, surface name vs currency tx mix on `/tx-stats`, and add a `/api/name/*` & `/api/names/*` family.
+
+* **`/utxo-set` Namecoin breakdown rewrite** — the previous "Names (locked)" cell mixed two distinct metrics into one number, which is confusing. The block is now split into three labelled cells:
+  * **Coins (currency NMC)** — the spendable money supply outside name registrations.
+  * **NMC locked in names** — the sum of NMC sitting inside name outputs at the chain tip (NOT a count of names).
+  * **Registered names** — the actual count of names returned by `name_scan` (active vs expired vs total).
+  Each cell now has a tooltip explaining what it does and does NOT mean. Adds a per-namespace breakdown table (active / expired / total per namespace) so readers can see the chain's identity-vs-domain composition at a glance.
+
+* **Background `name_scan` enumerator** — new `nameApi.getNamesSummary()` paginates `name_scan` and counts active / expired / total + per-namespace. Wired into `app.js` on the same 30-min interval used for the UTXO summary; cached to `global.namesSummary` and exposed to all views via `res.locals.namesSummary` (skipped under `slowDeviceMode`). The walk takes 1–2 minutes on a busy chain, so it lives off the request path.
+
+* **`/tx-stats` Names + Currency sections** — a new pair of sections at the top of `/tx-stats`:
+  * **Names** — active registered names, NMC locked in names, name txs over the last 24h, name-op rate per minute, op kind breakdown (`name_new` / `name_firstupdate` / `name_update`), top namespaces by active count.
+  * **Currency** — currency NMC supply, currency tx count over the last 24h, currency tx rate per minute, total tx count for the same window.
+  Both sections carry a min/pt-style hover infographic (`+nameTxInfoBadge`, `+currencyTxInfoBadge`) explaining how the numbers are calculated and how to read them. Backed by a new `refreshNameTxStats()` background task that walks the last 144 blocks every 10 min and classifies each tx by whether it carries a `nameOp`.
+
+* **New `/api/name/*` and `/api/names/*` endpoints** — the public API was Bitcoin-flavoured only; nothing exposed Namecoin's identity surface. Added:
+  * `GET /api/name/$NAME` — `name_show` enriched with decoded value, namespace, Nostr identities, NameID fields, and ifa-0001 imports.
+  * `GET /api/name/$NAME/history` — `name_history` (full update chain).
+  * `GET /api/names` — paginated `name_scan` (`start`, `count`, `prefix` query params).
+  * `GET /api/names/summary` — the cached counts surfaced on `/utxo-set` and `/tx-stats`.
+  * `GET /api/names/pending` — mempool-pending name ops (`name_pending`).
+  * `GET /api/names/tx-stats` — the last-24h name vs currency split surfaced on `/tx-stats`.
+  All six are documented in `docs/api.js` under a new `names` category and visible at `/api/docs`.
+
 ##### nmc-3.6.4
 ###### 2026-05-02
 

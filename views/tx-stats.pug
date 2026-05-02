@@ -6,6 +6,125 @@ block headContent
 block content
 	+pageTitle("Transaction Stats")
 
+	//- Namecoin Tx Mix — the chain carries TWO kinds of traffic: pure currency
+	//- transfers, and name operations (name_new / name_firstupdate / name_update).
+	//- The same min/pt-style hover infographic explains each section so a reader
+	//- can tell what the numbers mean at a glance.
+	mixin nameTxInfoBadge
+		- var titleHtml = "<b>Namecoin tx mix</b><br/>The chain mixes <em>currency transfers</em> with <em>name operations</em> (registrations, updates, expiries).<br/><br/><b>How it's calculated</b><br/>The explorer walks the most recent <code>144</code> blocks (≈24h) every 10 min and classifies each tx by whether any of its outputs carries a <code>name_new</code>, <code>name_firstupdate</code>, or <code>name_update</code> nameOp.<br/><br/><b>How to read it</b><br/>• ‘Names’ numbers count <em>transactions that touched the name database</em>.<br/>• ‘Currency’ numbers count txs that did NOT touch the name database (plain NMC transfers, mining payouts, etc.).<br/>• The two add up to the chain-wide tx count for the same window."
+		span.small.ms-2.border-dotted(title=titleHtml, data-bs-toggle="tooltip", data-bs-html="true") (?)
+
+	mixin currencyTxInfoBadge
+		- var titleHtml = "<b>Currency-only tx</b><br/>Transactions that move NMC without touching the name database. They look just like Bitcoin txs.<br/><br/><b>How it's calculated</b><br/>Total txs in the last 144 blocks <em>minus</em> txs that carry a <code>nameOp</code> output. Refreshed every 10 min in the background.<br/><br/><b>How to read it</b><br/>• Compare against the Names rate to see which workload dominates the chain right now.<br/>• Currency ‘NMC supply’ is the unencumbered side of the UTXO set — i.e. NMC <em>not</em> locked inside name outputs."
+		span.small.ms-2.border-dotted(title=titleHtml, data-bs-toggle="tooltip", data-bs-html="true") (?)
+
+	if (namesSummary || nameTxStats || (utxoSetSummary && (utxoSetSummary.total_names_amount !== undefined)))
+		.d-flex.flex-row
+			div
+				+sectionTitle("Names")
+			div
+				+nameTxInfoBadge
+
+		+contentSection
+			p.text-muted.small.mb-3 The Namecoin half of the chain. Every metric here is about the name database — registrations, updates, the NMC locked inside them, and the rate at which name-bearing transactions confirm.
+
+			.row
+				if (namesSummary)
+					.col-md-3.col-6.mb-3
+						div.text-muted.text-uppercase.small Active names
+						.lead= namesSummary.active.toLocaleString()
+						.small.text-muted #{namesSummary.total.toLocaleString()} total
+							if (namesSummary.expired)
+								span.ms-1 (#{namesSummary.expired.toLocaleString()} expired)
+				else if (namesSummaryPending)
+					.col-md-3.col-6.mb-3
+						div.text-muted.text-uppercase.small Active names
+						.lead.text-muted …
+						.small.text-muted Computing in background
+
+				if (utxoSetSummary && utxoSetSummary.total_names_amount !== undefined)
+					.col-md-3.col-6.mb-3
+						div.text-muted.text-uppercase.small NMC locked in names
+						.lead= parseFloat(utxoSetSummary.total_names_amount).toLocaleString()
+						.small.text-muted Sum of NMC inside name outputs
+
+				if (nameTxStats)
+					.col-md-3.col-6.mb-3
+						div.text-muted.text-uppercase.small Name txs / 24h
+						.lead= nameTxStats.nameTxCount.toLocaleString()
+						.small.text-muted #{(nameTxStats.nameTxFraction * 100).toFixed(2)}% of all txs
+
+					.col-md-3.col-6.mb-3
+						div.text-muted.text-uppercase.small Name op rate
+						.lead #{(nameTxStats.nameTxRate * 60).toFixed(2)}
+							span.small.ms-1 /min
+						.small.text-muted last 144 blocks (~24h)
+
+			if (nameTxStats && nameTxStats.opCounts)
+				.row.mt-2
+					.col-12.mb-2
+						div.text-muted.text-uppercase.small Name ops by kind (last ~24h)
+					- var __opTotal = nameTxStats.opCounts.name_new + nameTxStats.opCounts.name_firstupdate + nameTxStats.opCounts.name_update
+					.col-md-4.col-12.mb-2
+						span.badge.bg-secondary.fw-normal.me-2 name_new
+						span #{nameTxStats.opCounts.name_new.toLocaleString()}
+					.col-md-4.col-12.mb-2
+						span.badge.bg-success.fw-normal.me-2 name_firstupdate
+						span #{nameTxStats.opCounts.name_firstupdate.toLocaleString()}
+					.col-md-4.col-12.mb-2
+						span.badge.bg-primary.fw-normal.me-2 name_update
+						span #{nameTxStats.opCounts.name_update.toLocaleString()}
+
+			if (namesSummary && namesSummary.byNamespace && Object.keys(namesSummary.byNamespace).length)
+				.mt-3
+					div.text-muted.text-uppercase.small.mb-2 Top namespaces by active name count
+					- var __nsList = Object.keys(namesSummary.byNamespace).sort((a,b) => namesSummary.byNamespace[b].active - namesSummary.byNamespace[a].active).slice(0, 6)
+					.row
+						each __ns in __nsList
+							.col-md-4.col-6.mb-2.small
+								span.font-monospace.me-2= __ns === "(none)" ? "—" : (__ns + "/")
+								span= namesSummary.byNamespace[__ns].active.toLocaleString()
+								span.text-muted.small.ms-1 active
+
+		if (utxoSetSummary && utxoSetSummary.total_coins_amount !== undefined || nameTxStats)
+			.d-flex.flex-row
+				div
+					+sectionTitle("Currency")
+				div
+					+currencyTxInfoBadge
+
+			+contentSection
+				p.text-muted.small.mb-3 The Bitcoin-side of the chain. These metrics describe NMC moving as money rather than as the substrate for names — useful when you want to compare Namecoin's currency volume in isolation from name traffic.
+
+				.row
+					if (utxoSetSummary && utxoSetSummary.total_coins_amount !== undefined)
+						.col-md-3.col-6.mb-3
+							div.text-muted.text-uppercase.small Currency NMC supply
+							.lead= parseFloat(utxoSetSummary.total_coins_amount).toLocaleString()
+							.small.text-muted Outside name outputs
+
+					if (nameTxStats)
+						.col-md-3.col-6.mb-3
+							div.text-muted.text-uppercase.small Currency txs / 24h
+							.lead= nameTxStats.currencyTxCount.toLocaleString()
+							.small.text-muted #{(100 - nameTxStats.nameTxFraction * 100).toFixed(2)}% of all txs
+
+						.col-md-3.col-6.mb-3
+							div.text-muted.text-uppercase.small Currency tx rate
+							.lead #{(nameTxStats.currencyTxRate * 60).toFixed(2)}
+								span.small.ms-1 /min
+							.small.text-muted last 144 blocks (~24h)
+
+						.col-md-3.col-6.mb-3
+							div.text-muted.text-uppercase.small Total txs / 24h
+							.lead= nameTxStats.totalTxCount.toLocaleString()
+							.small.text-muted Currency + name txs combined
+
+				if (nameTxStats && nameTxStats.scannedAt)
+					.text-muted.small.mt-2
+						| Window: blocks #{nameTxStats.windowStartHeight.toLocaleString()}–#{nameTxStats.windowEndHeight.toLocaleString()}.
+						| Scanned in #{(nameTxStats.elapsedMs / 1000).toFixed(1)}s, refreshed every ~10 min.
+
 	//- Reusable mixin: the "min/pt" / "hr/pt" / "day/pt" units shown next to
 	//- each stats chart heading. They mean "minutes (or hours, or days) per
 	//- data point" — i.e. the average wall-clock distance between two

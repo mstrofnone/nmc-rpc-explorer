@@ -83,6 +83,7 @@ const Decimal = require('decimal.js');
 const pug = require("pug");
 const momentDurationFormat = require("moment-duration-format");
 const coreApi = require("./app/api/coreApi.js");
+const nameApi = require("./app/api/nameApi.js");
 const rpcApi = require("./app/api/rpcApi.js");
 const coins = require("./app/coins.js");
 const axios = require("axios");
@@ -634,6 +635,19 @@ async function onRpcConnectionVerified(getnetworkinfo, getblockchaininfo) {
 	refreshUtxoSetSummary();
 	setInterval(refreshUtxoSetSummary, 30 * 60 * 1000);
 
+	// Namecoin: walk name_scan once per 30 min so the explorer always has a
+	// fresh count of registered names (active + expired) and per-namespace
+	// breakdown. The scan can take 1–2 minutes on a busy chain, so it lives
+	// off the request path.
+	refreshNamesSummary();
+	setInterval(refreshNamesSummary, 30 * 60 * 1000);
+
+	// Namecoin: walk the last ~24h of blocks and count which transactions
+	// carry name operations vs which are pure currency txs. Same off-the-
+	// request-path pattern; the tx-stats page reads from the cached value.
+	refreshNameTxStats();
+	setInterval(refreshNameTxStats, 10 * 60 * 1000);
+
 
 
 	if (false) {
@@ -756,6 +770,100 @@ async function assessTxindexAvailability() {
 
 		// try again in 5 mins
 		setTimeout(assessTxindexAvailability, retryTime);
+	}
+}
+
+async function refreshNameTxStats() {
+	if (process.env.BTCEXP_DISABLE_NAME_TX_STATS === "true") {
+		debugLog("refreshNameTxStats disabled via BTCEXP_DISABLE_NAME_TX_STATS env var");
+		global.nameTxStats = null;
+		return;
+	}
+	try {
+		const chainInfo = await coreApi.getBlockchainInfo();
+		const tipHeight = chainInfo.blocks;
+		const windowSize = 144;
+		const startHeight = Math.max(0, tipHeight - windowSize + 1);
+		const startedAt = Date.now();
+		let totalTx = 0;
+		let nameTx = 0;
+		const opCounts = { name_new: 0, name_firstupdate: 0, name_update: 0 };
+		let earliestTime = null;
+		let latestTime = null;
+		for (let h = startHeight; h <= tipHeight; h++) {
+			let block;
+			try {
+				block = await coreApi.getBlockByHeight(h);
+			} catch (_e) {
+				continue;
+			}
+			if (!block || !Array.isArray(block.tx)) continue;
+			if (typeof block.time === "number") {
+				if (earliestTime === null || block.time < earliestTime) earliestTime = block.time;
+				if (latestTime === null || block.time > latestTime) latestTime = block.time;
+			}
+			for (const tx of block.tx) {
+				if (typeof tx === "string") { totalTx++; continue; }
+				totalTx++;
+				let hasNameOp = false;
+				if (Array.isArray(tx.vout)) {
+					for (const out of tx.vout) {
+						const no = out && out.scriptPubKey && out.scriptPubKey.nameOp;
+						if (no && no.op) {
+							hasNameOp = true;
+							if (opCounts[no.op] !== undefined) opCounts[no.op]++;
+						}
+					}
+				}
+				if (hasNameOp) nameTx++;
+			}
+		}
+		const elapsedMs = Date.now() - startedAt;
+		const windowSeconds = (earliestTime !== null && latestTime !== null) ? Math.max(latestTime - earliestTime, 1) : windowSize * 600;
+		global.nameTxStats = {
+			windowBlocks: windowSize,
+			windowStartHeight: startHeight,
+			windowEndHeight: tipHeight,
+			windowStartTime: earliestTime,
+			windowEndTime: latestTime,
+			windowSeconds,
+			totalTxCount: totalTx,
+			nameTxCount: nameTx,
+			currencyTxCount: Math.max(totalTx - nameTx, 0),
+			opCounts,
+			nameTxFraction: totalTx > 0 ? nameTx / totalTx : 0,
+			nameTxRate: nameTx / windowSeconds,
+			currencyTxRate: Math.max(totalTx - nameTx, 0) / windowSeconds,
+			scannedAt: Date.now(),
+			elapsedMs,
+		};
+		debugLog(`Refreshed name-tx stats: ${nameTx}/${totalTx} name txs in last ${windowSize} blocks (${(global.nameTxStats.nameTxFraction * 100).toFixed(2)}%) in ${elapsedMs}ms`);
+	} catch (e) {
+		debugLog("refreshNameTxStats error: " + e.message);
+		global.nameTxStats = null;
+	}
+}
+
+async function refreshNamesSummary() {
+	// Note: this scan runs ONCE every 30 min in the background, never on the
+	// request path. We deliberately do NOT gate this on `slowDeviceMode` —
+	// the scan is the only way to surface a name count, and the cost is paid
+	// at most every 30 min. Operators who really want zero RPC cost can flip
+	// `BTCEXP_DISABLE_NAMES_SUMMARY=true`.
+	if (process.env.BTCEXP_DISABLE_NAMES_SUMMARY === "true") {
+		debugLog("refreshNamesSummary disabled via BTCEXP_DISABLE_NAMES_SUMMARY env var");
+		global.namesSummary = null;
+		return;
+	}
+	global.namesSummaryPending = true;
+	try {
+		global.namesSummary = await nameApi.getNamesSummary();
+		debugLog(`Refreshed names summary: total=${global.namesSummary.total} active=${global.namesSummary.active} expired=${global.namesSummary.expired} elapsedMs=${global.namesSummary.elapsedMs}`);
+	} catch (e) {
+		debugLog("refreshNamesSummary error: " + e.message);
+		global.namesSummary = null;
+	} finally {
+		global.namesSummaryPending = false;
 	}
 }
 
@@ -1124,6 +1232,9 @@ expressApp.use(function(req, res, next) {
 	res.locals.exchangeRates = global.exchangeRates;
 	res.locals.utxoSetSummary = global.utxoSetSummary;
 	res.locals.utxoSetSummaryPending = global.utxoSetSummaryPending;
+	res.locals.namesSummary = global.namesSummary;
+	res.locals.namesSummaryPending = global.namesSummaryPending;
+	res.locals.nameTxStats = global.nameTxStats;
 	res.locals.networkVolume = global.networkVolume;
 	
 	res.locals.host = req.session.host;

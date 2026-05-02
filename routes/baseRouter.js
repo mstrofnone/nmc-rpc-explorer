@@ -2248,6 +2248,15 @@ router.get("/tx-stats", asyncHandler(async (req, res, next) => {
 	res.locals.getblockchaininfo = await coreApi.getBlockchainInfo();
 	let tipHeight = res.locals.getblockchaininfo.blocks;
 
+	// Surface the cached UTXO set summary on this page so the new
+	// Names/Currency sections can show NMC supply alongside tx counts.
+	// Reads from the existing 15-min file cache; harmless when missing.
+	try {
+		res.locals.utxoSetSummary = global.utxoSetSummary || await coreApi.getUtxoSetSummary(true, true);
+	} catch (_e) {
+		res.locals.utxoSetSummary = null;
+	}
+
 	// only re-calculate tx-stats every X blocks since it's data heavy
 	let heightInterval = 6;
 	let height = heightInterval * Math.floor(tipHeight / heightInterval);

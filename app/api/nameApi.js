@@ -371,6 +371,82 @@ function parseNameIdFields(parsedValue) {
 	return fields;
 }
 
+// ---------------------------------------------------------------------------
+// Names summary scanner.
+//
+// `gettxoutsetinfo.amount.names` reports total NMC LOCKED in name outputs.
+// It does not give us a count of names. To get a count we have to walk
+// `name_scan` (Namecoin Core has no `name_count` RPC). On a busy chain that
+// can be a lot of pages — so this helper is intended to be called from a
+// background interval task, never inline on a request render.
+//
+// Returns:
+//   {
+//     total:      <int>,           // every entry returned by name_scan
+//     active:     <int>,           // total - expired
+//     expired:    <int>,
+//     byNamespace: { d: { total, active, expired }, id: {...}, ... },
+//     scannedAt:  <ms epoch>,
+//     truncated:  <bool>,           // hit the per-prefix cap
+//     elapsedMs:  <int>,
+//   }
+// ---------------------------------------------------------------------------
+async function getNamesSummary({ pageSize = 2000, perPrefixCap = 1500000, prefixes = null } = {}) {
+	const startedAt = Date.now();
+	const summary = {
+		total: 0,
+		active: 0,
+		expired: 0,
+		byNamespace: {},
+		scannedAt: null,
+		truncated: false,
+		elapsedMs: 0,
+	};
+
+	// Default scan list. "" means "no prefix filter" — covers every namespace,
+	// including ones we haven't enumerated explicitly. We also walk a known
+	// list of namespaces so a giant `d/` set doesn't starve everything else.
+	const targets = prefixes && prefixes.length ? prefixes : [""];
+
+	for (const prefix of targets) {
+		let last = "";
+		let pages = 0;
+		const maxPages = Math.ceil(perPrefixCap / pageSize);
+		while (pages < maxPages) {
+			const params = [last, pageSize];
+			if (prefix) params.push({ prefix });
+			let rows;
+			try {
+				rows = await rpcApi.getRpcDataWithParams({ method: "name_scan", parameters: params });
+			} catch (_e) {
+				break;
+			}
+			if (!Array.isArray(rows) || rows.length === 0) break;
+
+			for (const row of rows) {
+				if (!row || typeof row.name !== "string") continue;
+				summary.total++;
+				if (row.expired) summary.expired++;
+				else summary.active++;
+				const ns = splitNamespace(row.name).namespace || "(none)";
+				if (!summary.byNamespace[ns]) summary.byNamespace[ns] = { total: 0, active: 0, expired: 0 };
+				summary.byNamespace[ns].total++;
+				if (row.expired) summary.byNamespace[ns].expired++;
+				else summary.byNamespace[ns].active++;
+			}
+
+			last = rows[rows.length - 1].name;
+			pages++;
+			if (rows.length < pageSize) break;
+		}
+		if (pages >= maxPages) summary.truncated = true;
+	}
+
+	summary.scannedAt = Date.now();
+	summary.elapsedMs = summary.scannedAt - startedAt;
+	return summary;
+}
+
 module.exports = {
 	nameShow,
 	nameHistory,
@@ -387,4 +463,5 @@ module.exports = {
 	parseNostrIdentities,
 	parseNameIdFields,
 	nip05ForLocalPart,
+	getNamesSummary,
 };

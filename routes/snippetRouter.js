@@ -165,6 +165,12 @@ router.get("/utxo-set", asyncHandler(async (req, res, next) => {
 
 	await utils.awaitPromises(promises);
 
+	// Namecoin: surface the cached registered-names summary alongside
+	// the UTXO totals so the page can show count-of-names next to NMC-locked.
+	res.locals.namesSummary = global.namesSummary;
+	res.locals.namesSummaryPending = global.namesSummaryPending;
+	res.locals.nameApi = require("./../app/api/nameApi.js");
+
 	res.render("snippets/utxo-set");
 }));
 

@@ -267,5 +267,48 @@ module.exports = {
 			"desc":"Returns the semantic version of the public API, which is maintained separate from the app version."
 		},
 
+		// names (Namecoin-only)
+		{
+			"category":"names",
+			"url":"/name/$NAME",
+			"desc":"Returns the current record for the given Namecoin name (wraps `name_show`), enriched with decoded value (when JSON), namespace, parsed Nostr identities, NameID fields, and ifa-0001 `import` references.",
+			"testUrl": "/name/d/testls"
+		},
+		{
+			"category":"names",
+			"url":"/name/$NAME/history",
+			"desc":"Full update history for the given name, wrapping `name_history`. One entry per `name_firstupdate`/`name_update` covering the lifetime of the registration.",
+			"testUrl": "/name/d/testls/history"
+		},
+		{
+			"category":"names",
+			"url":"/names",
+			"desc":"Paginated enumeration of registered names (wraps `name_scan`). Optional query params: `start` (resume cursor), `count` (1-500, default 50), `prefix` (e.g. `d/` to filter to one namespace).",
+			"optionalParams": {
+				"start":"Resume cursor (a name to start AFTER).",
+				"count":"Page size (1–500, default 50).",
+				"prefix":"Restrict to names beginning with this prefix, e.g. `d/` or `id/`."
+			},
+			"testUrl": "/names?prefix=d/&count=10"
+		},
+		{
+			"category":"names",
+			"url":"/names/summary",
+			"desc":"Cached count of registered names (active / expired / total) and a per-namespace breakdown. Refreshed every 30 minutes in the background; returns `null` while the first scan is still pending.",
+			"testUrl": "/names/summary"
+		},
+		{
+			"category":"names",
+			"url":"/names/pending",
+			"desc":"Name operations currently sitting in the mempool (wraps `name_pending`). One entry per pending op, with `op`, `name` (when revealed), `value`, `txid`, `vout`.",
+			"testUrl": "/names/pending"
+		},
+		{
+			"category":"names",
+			"url":"/names/tx-stats",
+			"desc":"Last-~24h split of name-bearing transactions vs currency-only transactions. Refreshed every ~10 min by walking the most recent 144 blocks. Includes per-op counts (`name_new` / `name_firstupdate` / `name_update`) and per-second tx rates for both halves.",
+			"testUrl": "/names/tx-stats"
+		},
+
 	]
 }
