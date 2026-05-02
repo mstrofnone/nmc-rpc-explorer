@@ -1,3 +1,48 @@
+##### nmc-3.6.11
+###### 2026-05-02
+
+**`/utxo-set` Biggest Current Squatter + Biggest All-time Squatter sections.**
+
+Namecoin's open registration model means bulk squatters — typo-squat farms,
+parking services, drainer farms, IPFS-gateway sinkholes, mass-mirrored
+content operators — stand out clearly: they almost always reuse one
+template `value` across thousands of registrations. Until now, that
+pattern was invisible on the explorer.
+
+The `/utxo-set` page now renders two new leaderboard sections directly
+below the existing **By namespace** table:
+
+- **Biggest current squatter** — top-N clusters of *currently active*
+  names whose `value` is byte-for-byte identical, ranked by active count.
+  This is the live picture of who's currently squatting how many names.
+- **Biggest all-time squatter** — same per-value clustering, but ranked
+  by total cluster size (active + expired). The all-time scope mirrors
+  the Active+Expired+Total columns of the **By namespace** section above
+  it, so it surfaces lapsed-but-still-indexed squatter farms that the
+  current view doesn't see.
+
+Each row shows the rank, a preview of the shared value (with the full
+value revealed on hover for >80-byte values), the cluster's value byte
+length, the namespaces it spans (top-4 + overflow), the active/expired/
+total counts, and up to 5 sample names linking to their `/name/<name>`
+page. Clusters with fewer than 2 matching names are excluded — a single
+"cluster" of 1 is just a regular name, not a squatter pattern. Empty
+values (newly-issued `name_new` placeholders that haven't received a
+`name_firstupdate` yet) are skipped so they don't lump into a phantom
+giant cluster.
+
+Clustering is added to the same 30-min background `name_scan` walk that
+already powers **By namespace**, **Value-shape filters**, and **DNS
+record filters**, so the new sections cost zero additional RPC. Per-value
+buckets accumulate in memory during the scan and are ranked at the end
+— only the top-N clusters per leaderboard survive into the cached
+summary. Hover the (?) icon next to either section header for a tooltip
+explaining how the leaderboard is calculated.
+
+The **By namespace** section header also gets a (?) tooltip now, so all
+three leaderboard groupings (namespace / current squatter / all-time
+squatter) are self-documenting on the page.
+
 ##### nmc-3.6.10
 ###### 2026-05-02
 

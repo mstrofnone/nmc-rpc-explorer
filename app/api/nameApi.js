@@ -588,8 +588,24 @@ const FILTER_DESCRIPTIONS = {
 //     elapsedMs:  <int>,
 //   }
 // ---------------------------------------------------------------------------
-async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefixes = null, filterListCap = 5000 } = {}) {
+async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefixes = null, filterListCap = 5000, squatterTopN = 10, squatterSampleNames = 5, squatterMinCount = 2, squatterMaxValueLen = 4096 } = {}) {
 	const startedAt = Date.now();
+	// Squatter clustering: group names by their EXACT value string. Names
+	// registered in bulk by the same operator (typo-squat farms, parking
+	// services, drainer farms, etc.) almost always reuse a single template
+	// value across thousands of registrations. The largest cluster of
+	// active names sharing one value is the "biggest current squatter";
+	// the largest cluster across active+expired is the "biggest all-time
+	// squatter". We accumulate per-value buckets here and rank them after
+	// the scan finishes.
+	//
+	// Memory shape: a Map<valueKey, {count,activeCount,expiredCount,sampleNames:[],byNamespace:{ns:count}}>.
+	// Cluster keys are the raw value string truncated to squatterMaxValueLen
+	// to bound memory; values longer than that are extremely rare on a 520-byte
+	// chain anyway. Empty values ("") are skipped — newly-registered
+	// (name_new) names have no value yet and would lump into a phantom giant
+	// cluster otherwise.
+	const clusters = new Map();
 	const summary = {
 		total: 0,
 		active: 0,
@@ -598,6 +614,14 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 		filterCounts: Object.fromEntries(FILTER_KEYS.map(k => [k, 0])),
 		filterLists: Object.fromEntries(FILTER_KEYS.map(k => [k, []])),
 		filterListCap,
+		// Top-N squatter clusters by active count and by total (active+expired) count.
+		// Filled in at the end of the scan.
+		squattersCurrent: [],
+		squattersAllTime: [],
+		squatterTopN,
+		squatterMinCount,
+		squatterUniqueValues: 0,
+		squatterClusteredNames: 0,
 		scannedAt: null,
 		truncated: false,
 		pagesScanned: 0,
@@ -645,6 +669,27 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 				summary.byNamespace[ns].total++;
 				if (row.expired) summary.byNamespace[ns].expired++;
 				else summary.byNamespace[ns].active++;
+
+				// Squatter clustering: every row with a non-empty value goes
+				// into the cluster bucket keyed by its exact value (truncated).
+				// We track active vs expired separately so we can rank by either.
+				if (typeof row.value === "string" && row.value.length > 0) {
+					const clusterKey = row.value.length > squatterMaxValueLen
+						? row.value.substring(0, squatterMaxValueLen)
+						: row.value;
+					let bucket = clusters.get(clusterKey);
+					if (!bucket) {
+						bucket = { count: 0, activeCount: 0, expiredCount: 0, sampleNames: [], byNamespace: {} };
+						clusters.set(clusterKey, bucket);
+					}
+					bucket.count++;
+					if (row.expired) bucket.expiredCount++;
+					else bucket.activeCount++;
+					if (bucket.sampleNames.length < squatterSampleNames) {
+						bucket.sampleNames.push(row.name);
+					}
+					bucket.byNamespace[ns] = (bucket.byNamespace[ns] || 0) + 1;
+				}
 
 				// Value-shape classification — only run on active names so the
 				// filter counts reflect what's currently *resolvable*. Expired
@@ -708,6 +753,38 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 		if (hitFullPageLimit) summary.truncated = true;
 		summary.pagesScanned += pages;
 	}
+
+	// Rank clusters into top-N for both "current" (active only) and
+	// "all-time" (active + expired) leaderboards. We only keep buckets at or
+	// above squatterMinCount; a single-name "cluster" is by definition not a
+	// squatter pattern, just a regular name. Ties are broken by total count
+	// (so two clusters with equal active counts are ordered by all-time scope).
+	summary.squatterUniqueValues = clusters.size;
+	const clusterArr = [];
+	for (const [valueKey, bucket] of clusters.entries()) {
+		if (bucket.count < squatterMinCount) continue;
+		summary.squatterClusteredNames += bucket.count;
+		clusterArr.push({
+			value: valueKey,
+			valueLength: valueKey.length,
+			count: bucket.count,
+			activeCount: bucket.activeCount,
+			expiredCount: bucket.expiredCount,
+			sampleNames: bucket.sampleNames,
+			byNamespace: bucket.byNamespace,
+		});
+	}
+	// Current squatters: rank by active count desc, then total desc.
+	summary.squattersCurrent = clusterArr
+		.filter(c => c.activeCount >= squatterMinCount)
+		.slice() // shallow copy before sort
+		.sort((a, b) => (b.activeCount - a.activeCount) || (b.count - a.count))
+		.slice(0, squatterTopN);
+	// All-time squatters: rank by total count desc, then active desc.
+	summary.squattersAllTime = clusterArr
+		.slice()
+		.sort((a, b) => (b.count - a.count) || (b.activeCount - a.activeCount))
+		.slice(0, squatterTopN);
 
 	summary.scannedAt = Date.now();
 	summary.elapsedMs = summary.scannedAt - startedAt;
