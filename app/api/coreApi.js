@@ -297,6 +297,25 @@ function getUtxoSetSummary(useCoinStatsIndexIfAvailable=true, useCacheIfAvailabl
 		} else {
 			utxoSetSummary = await rpcApi.getUtxoSetSummary(useCoinStatsIndexIfAvailable);
 
+			// Namecoin Core's `gettxoutsetinfo` returns the totals nested under
+			// `amount` (`{ coins, names, total }`) instead of the flat
+			// `total_amount` field that Bitcoin Core uses. Surface the combined
+			// total as `total_amount` (and keep the breakdown around for views
+			// that want to show coins-vs-names separately) so the rest of the
+			// explorer (which assumes Bitcoin's shape) keeps working.
+			if (utxoSetSummary && utxoSetSummary.amount && utxoSetSummary.total_amount === undefined) {
+				const amt = utxoSetSummary.amount;
+				if (amt.total !== undefined) {
+					utxoSetSummary.total_amount = amt.total;
+				}
+				if (amt.coins !== undefined) {
+					utxoSetSummary.total_coins_amount = amt.coins;
+				}
+				if (amt.names !== undefined) {
+					utxoSetSummary.total_names_amount = amt.names;
+				}
+			}
+
 			if (utxoSetSummary && utxoSetSummary.total_amount) {
 				if (useCoinStatsIndexIfAvailable && global.getindexinfo && global.getindexinfo.coinstatsindex) {
 					utxoSetSummary.usingCoinStatsIndex = true;
