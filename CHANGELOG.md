@@ -1,3 +1,12 @@
+##### nmc-3.6.7
+###### 2026-05-02
+
+Two small touch-ups.
+
+* **`/utxo-set` info-block: BTC → NMC** — the static "About the UTXO Set..." copy at the top of `views/utxo-set.pug` was upstream Bitcoin verbatim, so it talked about "a spendable unit of BTC", "all spendable BTC units", "every BTC node", and the example diagrams labelled the UTXOs as `1 BTC`, `0.25 BTC`, `0.75 BTC`. Renamed all eight occurrences to NMC. The dynamic numbers below (which already came through the coin-aware `coinConfig.baseCurrencyUnit` plumbing) were already correct — this just brings the static prose in sync with the rebranded chrome.
+
+* **`/rpc-browser` index layout: 1 column → 3 columns** — when no method is selected, the page now puts the "About RPC Browser..." alert at the top (full-width, under the title) and lays the RPC method sections out in a responsive 3-column grid (`row-cols-1 row-cols-md-2 row-cols-lg-3`) below it, instead of stacking every section list in the narrow `col-md-3` sidebar next to a tiny info alert. Favorites and Recent (when present) sit between the alert and the grid. The two-column layout (main panel + right sidebar) is preserved when a method IS selected, since that's still the right shape for the per-method view.
+
 ##### nmc-3.6.6
 ###### 2026-05-02
 
