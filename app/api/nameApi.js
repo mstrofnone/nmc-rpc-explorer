@@ -391,7 +391,7 @@ function parseNameIdFields(parsedValue) {
 //     elapsedMs:  <int>,
 //   }
 // ---------------------------------------------------------------------------
-async function getNamesSummary({ pageSize = 2000, perPrefixCap = 1500000, prefixes = null } = {}) {
+async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefixes = null } = {}) {
 	const startedAt = Date.now();
 	const summary = {
 		total: 0,
@@ -400,18 +400,23 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 1500000, prefix
 		byNamespace: {},
 		scannedAt: null,
 		truncated: false,
+		pagesScanned: 0,
 		elapsedMs: 0,
 	};
 
 	// Default scan list. "" means "no prefix filter" — covers every namespace,
-	// including ones we haven't enumerated explicitly. We also walk a known
-	// list of namespaces so a giant `d/` set doesn't starve everything else.
+	// including ones we haven't enumerated explicitly. The cap is huge by
+	// default (5M per prefix) because the entire chain has ~1.5M names today;
+	// we only flip `truncated` when we genuinely run out of pages on a single
+	// prefix, i.e. the chain has more names than the cap can paginate.
 	const targets = prefixes && prefixes.length ? prefixes : [""];
 
 	for (const prefix of targets) {
 		let last = "";
+		let firstPage = true;
 		let pages = 0;
 		const maxPages = Math.ceil(perPrefixCap / pageSize);
+		let hitFullPageLimit = false;
 		while (pages < maxPages) {
 			const params = [last, pageSize];
 			if (prefix) params.push({ prefix });
@@ -423,7 +428,14 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 1500000, prefix
 			}
 			if (!Array.isArray(rows) || rows.length === 0) break;
 
-			for (const row of rows) {
+			// Namecoin Core's `name_scan` cursor is INCLUSIVE — passing
+			// `start="d/foo"` returns "d/foo" as the first row of the response.
+			// On every page after the first we therefore need to drop row[0] to
+			// avoid double-counting the name we passed as the cursor. Without
+			// this, a 1.5M-name chain enumerates as ~5M with massive duplicates.
+			const startIdx = firstPage ? 0 : 1;
+			for (let i = startIdx; i < rows.length; i++) {
+				const row = rows[i];
 				if (!row || typeof row.name !== "string") continue;
 				summary.total++;
 				if (row.expired) summary.expired++;
@@ -435,11 +447,43 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 1500000, prefix
 				else summary.byNamespace[ns].active++;
 			}
 
-			last = rows[rows.length - 1].name;
+			// Cursor advancement: pick the LAST row whose `name` is a string we
+			// can pass back to `name_scan`. Hex-encoded names (where the row has
+			// no readable `name` field) would otherwise leave `last` undefined,
+			// which `name_scan` interprets as "" and restarts the whole scan.
+			// That's how a 700k-entry chain enumerated as 10M before this fix.
+			let newLast = null;
+			for (let i = rows.length - 1; i >= 0; i--) {
+				if (rows[i] && typeof rows[i].name === "string") {
+					newLast = rows[i].name;
+					break;
+				}
+			}
+			if (newLast === null || newLast === last) {
+				// Either the page had no string-named row, or the cursor failed
+				// to advance — either way, stop. Continuing would loop forever
+				// or reset to the start.
+				pages++;
+				break;
+			}
+			last = newLast;
+			firstPage = false;
 			pages++;
+			// `pageSize - 1` because the next page will drop its first row;
+			// any short page after page 1 means we've reached the end.
 			if (rows.length < pageSize) break;
+			if (pages >= maxPages) {
+				hitFullPageLimit = true;
+			}
 		}
-		if (pages >= maxPages) summary.truncated = true;
+		// Only mark truncated when we burned through every page allowed AND
+		// the last page we saw was still full — i.e. there was demonstrably
+		// more data on the chain than we had pages to fetch. Prior versions
+		// also flipped truncated when the loop exited via `pages == maxPages`
+		// even if the final partial-page break would have triggered on the
+		// next iteration; the new check avoids that false positive.
+		if (hitFullPageLimit) summary.truncated = true;
+		summary.pagesScanned += pages;
 	}
 
 	summary.scannedAt = Date.now();

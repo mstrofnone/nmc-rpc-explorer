@@ -1,3 +1,15 @@
+##### nmc-3.6.6
+###### 2026-05-02
+
+Three small follow-ups to nmc-3.6.5.
+
+* **Per-metric `(?)` infographics on `/tx-stats` Names + Currency cells** — every cell in the new Names and Currency sections now carries its own dotted-underlined `(?)` badge that, on hover, surfaces a min/pt-style HTML tooltip explaining what the metric is, how it is calculated (specific RPC + arithmetic), and how to read the number. The 'Active names', 'NMC locked in names', 'Name txs / 24h', 'Name op rate', 'Name ops by kind', 'Top namespaces', 'Currency NMC supply', 'Currency txs / 24h', 'Currency tx rate', and 'Total txs / 24h' cells all gain one. Replaces the section-level `+nameTxInfoBadge`/`+currencyTxInfoBadge` ad-hoc tooltips that explained the section as a whole but not the individual numbers.
+
+* **Fix the `(truncated — hit per-prefix scan cap)` warning on `/utxo-set`** — turned out to be exposing TWO separate bugs in `getNamesSummary()`'s pagination: (1) Namecoin Core's `name_scan` cursor is INCLUSIVE — passing `start="d/foo"` returns `"d/foo"` as the first row, so every page after the first was double-counting one name; (2) when a page ended on a hex-encoded row (where `row.name` is undefined because only `name_encoding` is set), `last = rows[rows.length - 1].name` set the cursor to `undefined`, which `name_scan` interpreted as `""`, and the scan looped back to the START of the keyspace. The two combined turned a 787,747-name database into a phantom 9.96M with `truncated=true`. Three fixes: (a) drop `row[0]` of every page after the first, (b) walk backwards from the end of each page to find the last row whose `name` is a string, then break out if the cursor fails to advance or matches the previous one, (c) only flip `truncated` when the LAST page we saw was full (real cap-hit, not a partial-page rollover). Adds `pagesScanned` to the summary for diagnostics.
+  Result: scan time drops from 110–220s to ~17s. Reported names go from inflated 9.96M back to honest 787,747 (active 373,078, expired 414,669, top namespaces `d/`, `u/`, `id/`, `nft/`, `i/`, `fp/`).
+
+* **Enable RPC Terminal and RPC Browser on the public demo** — the routes have always been live; they just guard against unauthenticated access unless `BTCEXP_DEMO=true` (or `BTCEXP_BASIC_AUTH_PASSWORD` is set). The 23.158.233.10:3002 `.env` had `BTCEXP_DEMO=false`. Switched to `true` and patched `views/layout.pug` so it doesn't crash when the active coin module's `demoSiteUrlsByNetwork` is empty (which is the Namecoin module's case): the demo-sites navbar dropdown and the footer 'Public Demos' block now both gate on the URL map being populated, and the inner per-network row also skips entries whose `logoUrl`/`coinIcon`/`demoSiteUrl` is missing. Without these guards, `BTCEXP_DEMO=true` plus a non-Bitcoin coin module crashes every page render on `assetUrl(undefined).substring`. The `BTCEXP_DEMO=true` flag also enables the existing tx-list pagination caps that demo mode applies (a small DoS-protection win for a public read-only explorer).
+
 ##### nmc-3.6.5
 ###### 2026-05-02
 

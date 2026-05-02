@@ -108,7 +108,10 @@ html(lang="en")
 							
 						
 						ul.navbar-nav
-							if (config.demoSite && homepage)
+							//- Demo-sites dropdown is only meaningful when the active coin module
+							//- declares sister-network URLs. Without this guard, BTCEXP_DEMO=true
+							//- on Namecoin crashes the homepage on assetUrl(undefined).substring.
+							if (config.demoSite && homepage && coinConfig.demoSiteUrlsByNetwork && Object.keys(coinConfig.demoSiteUrlsByNetwork).length)
 								li.nav-item.dropdown.me-0.me-md-2.mt-2.mt-md-0.text-center.text-md-start
 									a.nav-link.dropdown-toggle.bg-header-footer-highlight.rounded(href="javascript:void(0)", role="button", data-bs-toggle="dropdown", aria-haspopup="true", aria-expanded="false")
 										img.align-text-top.me-1(src=assetUrl(coinConfig.coinIconUrlsByNetwork[activeBlockchain]), style="width: 20px;")
@@ -119,10 +122,11 @@ html(lang="en")
 										- var demoSites = ["main", "test", "signet"];
 										
 										each demoSite in demoSites
-											a.dropdown-item(href=coinConfig.demoSiteUrlsByNetwork[demoSite])
-												img.align-text-top.me-2(src=assetUrl(coinConfig.coinIconUrlsByNetwork[demoSite]), style="width: 20px;")
+											if (coinConfig.demoSiteUrlsByNetwork[demoSite] && coinConfig.coinIconUrlsByNetwork[demoSite])
+												a.dropdown-item(href=coinConfig.demoSiteUrlsByNetwork[demoSite])
+													img.align-text-top.me-2(src=assetUrl(coinConfig.coinIconUrlsByNetwork[demoSite]), style="width: 20px;")
 												
-												| #{coinConfig.siteTitlesByNetwork[demoSite].replace("Explorer", "").replace("Bitcoin", "Mainnet")}
+													| #{coinConfig.siteTitlesByNetwork[demoSite].replace("Explorer", "").replace("Bitcoin", "Mainnet")}
 
 							if (config.siteTools)
 								li.nav-item.dropdown.me-0.me-md-2.mt-2.mt-md-0.text-center.text-md-start
@@ -346,12 +350,18 @@ html(lang="en")
 									span )
 
 					.col-lg-3
-						if (config.demoSite)
+						//- The 'Public Demos' footer block is intended for the upstream
+						//- bitcoinexplorer.org cluster (mainnet/testnet/signet sister sites).
+						//- We hide it when the active coin module hasn't published any demo
+						//- URLs (Namecoin's `demoSiteUrlsByNetwork` is intentionally empty)
+						//- and we filter the per-network row so a missing logoUrl can't
+						//- crash the layout via `assetUrl(undefined).substring`.
+						if (config.demoSite && coinConfig.demoSiteUrlsByNetwork && Object.keys(coinConfig.demoSiteUrlsByNetwork).length)
 							.mb-4
 								h6 Public Demos
 
 								.ms-2
-									if (coinConfig.demoSiteUrlsByNetwork && coinConfig.demoSiteUrlsByNetwork.main)
+									if (coinConfig.demoSiteUrlsByNetwork.main)
 										a.footer-link(href=coinConfig.demoSiteUrlsByNetwork.main) #{coinConfig.demoSiteUrlsByNetwork.main}
 									else
 										a.footer-link(href="https://bitcoinexplorer.org") https://bitcoinexplorer.org
@@ -361,13 +371,14 @@ html(lang="en")
 									a.footer-link(href="http://btcexpz7xlwrqknqw6p3bok6shf73qtkd6zxct4x4qta2ktvh7ntprad.onion", title="Tor v3 Hidden Service", data-bs-toggle="tooltip") btcexp….onion
 									span.ms-1 (tor v3)
 									+copyTextButton("http://btcexpz7xlwrqknqw6p3bok6shf73qtkd6zxct4x4qta2ktvh7ntprad.onion")
-									
+
 									div.mt-2
 										- var demoSites = ["main", "test", "signet"];
-										
+
 										each demoSite in demoSites
-											a.me-2(href=coinConfig.demoSiteUrlsByNetwork[demoSite], title=coinConfig.siteTitlesByNetwork[demoSite], data-bs-toggle="tooltip")
-												img(src=assetUrl(coinConfig.logoUrlsByNetwork[demoSite]), alt=coinConfig.siteTitlesByNetwork[demoSite], style="width: 40px; height: 40px;")
+											if (coinConfig.logoUrlsByNetwork[demoSite] && coinConfig.demoSiteUrlsByNetwork[demoSite])
+												a.me-2(href=coinConfig.demoSiteUrlsByNetwork[demoSite], title=coinConfig.siteTitlesByNetwork[demoSite], data-bs-toggle="tooltip")
+													img(src=assetUrl(coinConfig.logoUrlsByNetwork[demoSite]), alt=coinConfig.siteTitlesByNetwork[demoSite], style="width: 40px; height: 40px;")
 
 					.col-lg-3
 						.mb-4

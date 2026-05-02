@@ -18,6 +18,14 @@ block content
 		- var titleHtml = "<b>Currency-only tx</b><br/>Transactions that move NMC without touching the name database. They look just like Bitcoin txs.<br/><br/><b>How it's calculated</b><br/>Total txs in the last 144 blocks <em>minus</em> txs that carry a <code>nameOp</code> output. Refreshed every 10 min in the background.<br/><br/><b>How to read it</b><br/>• Compare against the Names rate to see which workload dominates the chain right now.<br/>• Currency ‘NMC supply’ is the unencumbered side of the UTXO set — i.e. NMC <em>not</em> locked inside name outputs."
 		span.small.ms-2.border-dotted(title=titleHtml, data-bs-toggle="tooltip", data-bs-html="true") (?)
 
+	//- Per-metric infographic. Each Names/Currency cell carries one of these,
+	//- mirroring the min/pt convention: the (?) badge is dotted-underlined; on
+	//- hover, you get the calculation recipe + how to read the number. Title
+	//- text is HTML; pug auto-escapes when assigned to `title=` so we hand-build
+	//- with concatenation.
+	mixin metricInfoBadge(html)
+		span.small.ms-1.border-dotted(title=html, data-bs-toggle="tooltip", data-bs-html="true") (?)
+
 	if (namesSummary || nameTxStats || (utxoSetSummary && (utxoSetSummary.total_names_amount !== undefined)))
 		.d-flex.flex-row
 			div
@@ -31,7 +39,9 @@ block content
 			.row
 				if (namesSummary)
 					.col-md-3.col-6.mb-3
-						div.text-muted.text-uppercase.small Active names
+						div.text-muted.text-uppercase.small
+							span Active names
+							+metricInfoBadge("<b>Active names</b><br/>Count of names that are still resolvable on chain (i.e. <code>expired:false</code> as reported by Namecoin Core).<br/><br/><b>How it's calculated</b><br/>The explorer paginates <code>name_scan</code> from the start of the keyspace through the end, every 30 min in the background. Each row's <code>expired</code> flag bumps either the <em>active</em> or <em>expired</em> counter. There is no <code>name_count</code> RPC — enumeration is the only way.<br/><br/><b>How to read it</b><br/>• 'Active' is what you can `name_show` and get a non-expired record for.<br/>• 'Total' includes expired-but-still-indexed entries. Namecoin Core keeps expired records in the database until they are pruned.")
 						.lead= namesSummary.active.toLocaleString()
 						.small.text-muted #{namesSummary.total.toLocaleString()} total
 							if (namesSummary.expired)
@@ -44,18 +54,24 @@ block content
 
 				if (utxoSetSummary && utxoSetSummary.total_names_amount !== undefined)
 					.col-md-3.col-6.mb-3
-						div.text-muted.text-uppercase.small NMC locked in names
+						div.text-muted.text-uppercase.small
+							span NMC locked in names
+							+metricInfoBadge("<b>NMC locked in names</b><br/>Sum of NMC sitting inside name outputs at the chain tip.<br/><br/><b>How it's calculated</b><br/>Sourced directly from <code>gettxoutsetinfo.amount.names</code>. Namecoin Core walks the UTXO set and tallies the value of every output whose <code>scriptPubKey</code> carries a <code>nameOp</code>. With <code>coinstatsindex</code> enabled, the call is sub-second; without it, ~88s on this node.<br/><br/><b>How to read it</b><br/>• Each registered name carries a small NMC balance (typically 0.01 NMC, but it has varied) that follows the name UTXO around until it is spent or the name expires.<br/>• This is <em>not</em> a count of names — see 'Active names' for that.<br/>• Cap on issued supply still applies; this NMC is <em>locked</em>, not extra-issued.")
 						.lead= parseFloat(utxoSetSummary.total_names_amount).toLocaleString()
 						.small.text-muted Sum of NMC inside name outputs
 
 				if (nameTxStats)
 					.col-md-3.col-6.mb-3
-						div.text-muted.text-uppercase.small Name txs / 24h
+						div.text-muted.text-uppercase.small
+							span Name txs / 24h
+							+metricInfoBadge("<b>Name txs over the last ≈24h</b><br/>Number of transactions in the last 144 blocks that carried at least one <code>nameOp</code> output.<br/><br/><b>How it's calculated</b><br/>The explorer fetches the last 144 blocks via <code>getblock &lt;hash&gt; 2</code> (verbose, includes decoded outputs), then for each tx checks whether any <code>vout[].scriptPubKey.nameOp</code> is set. One <em>tx</em> with three name ops counts once. Refreshed every 10 min.<br/><br/><b>How to read it</b><br/>• Use the percentage to gauge what fraction of chain throughput is identity vs currency.<br/>• 144 blocks ≈ 24h at the merge-mined 10 min target; the actual window time is shown below the table.")
 						.lead= nameTxStats.nameTxCount.toLocaleString()
 						.small.text-muted #{(nameTxStats.nameTxFraction * 100).toFixed(2)}% of all txs
 
 					.col-md-3.col-6.mb-3
-						div.text-muted.text-uppercase.small Name op rate
+						div.text-muted.text-uppercase.small
+							span Name op rate
+							+metricInfoBadge("<b>Name-op rate</b><br/>Average number of <em>name operations</em> confirmed per minute over the last 144 blocks.<br/><br/><b>How it's calculated</b><br/><code>nameTxCount / windowSeconds × 60</code><br/>where <code>windowSeconds</code> is the wall-clock distance between the earliest and latest <code>block.time</code> in the window. Note this counts <em>txs</em> with name ops, not individual ops — a single tx that does <code>name_new</code> + <code>name_firstupdate</code> on a batched output counts once. See the per-op breakdown below for individual op kinds.<br/><br/><b>How to read it</b><br/>• Compare against the Currency tx rate to see which workload is heavier.<br/>• Spikes typically follow large bulk-update sessions on identity registrars.")
 						.lead #{(nameTxStats.nameTxRate * 60).toFixed(2)}
 							span.small.ms-1 /min
 						.small.text-muted last 144 blocks (~24h)
@@ -63,7 +79,9 @@ block content
 			if (nameTxStats && nameTxStats.opCounts)
 				.row.mt-2
 					.col-12.mb-2
-						div.text-muted.text-uppercase.small Name ops by kind (last ~24h)
+						div.text-muted.text-uppercase.small
+							span Name ops by kind (last ~24h)
+							+metricInfoBadge("<b>Per-op breakdown</b><br/>Counts of each Namecoin name-op kind over the same 144-block window.<br/><br/><b>How it's calculated</b><br/>Same walk as 'Name txs / 24h'. Every <code>vout[].scriptPubKey.nameOp.op</code> increments one of the three buckets. Multiple name ops in a single tx <em>do</em> count individually here (whereas 'Name txs' counts the parent tx once).<br/><br/><b>The three op kinds</b><br/>• <code>name_new</code> — anti-frontrunning <em>commitment</em>. Locks a hash of (name, salt) into the chain. The actual name is hidden.<br/>• <code>name_firstupdate</code> — the <em>reveal</em>. Discloses the name and its first value, ~12 blocks after the matching <code>name_new</code>.<br/>• <code>name_update</code> — every subsequent change to a name's value or the renewal that resets its expiry counter.")
 					- var __opTotal = nameTxStats.opCounts.name_new + nameTxStats.opCounts.name_firstupdate + nameTxStats.opCounts.name_update
 					.col-md-4.col-12.mb-2
 						span.badge.bg-secondary.fw-normal.me-2 name_new
@@ -77,7 +95,9 @@ block content
 
 			if (namesSummary && namesSummary.byNamespace && Object.keys(namesSummary.byNamespace).length)
 				.mt-3
-					div.text-muted.text-uppercase.small.mb-2 Top namespaces by active name count
+					div.text-muted.text-uppercase.small.mb-2
+						span Top namespaces by active name count
+						+metricInfoBadge("<b>Top namespaces</b><br/>The Namecoin name space is conventionally split by single-letter prefixes followed by a slash. <code>d/</code> domains and <code>id/</code> identities dominate; the rest of this list shows the long tail.<br/><br/><b>How it's calculated</b><br/>During the same <code>name_scan</code> walk, every name's prefix (everything before the first <code>/</code>) is bucketed into <code>byNamespace</code>. The 'active' column drives the sort here.<br/><br/><b>Common namespaces</b><br/>• <code>d/</code> — .bit domains.<br/>• <code>id/</code> — NameID identities (PGP, OTR, Nostr, etc.).<br/>• <code>dd/</code> — sub-record / import target for d/ records (ifa-0001).<br/>• <code>u/</code>, <code>p/</code>, <code>i/</code>, <code>a/</code>, <code>x/</code> — various conventional and experimental uses.<br/>• '—' (no prefix) is reserved single-letter / no-slash names.")
 					- var __nsList = Object.keys(namesSummary.byNamespace).sort((a,b) => namesSummary.byNamespace[b].active - namesSummary.byNamespace[a].active).slice(0, 6)
 					.row
 						each __ns in __nsList
@@ -99,24 +119,32 @@ block content
 				.row
 					if (utxoSetSummary && utxoSetSummary.total_coins_amount !== undefined)
 						.col-md-3.col-6.mb-3
-							div.text-muted.text-uppercase.small Currency NMC supply
+							div.text-muted.text-uppercase.small
+								span Currency NMC supply
+								+metricInfoBadge("<b>Currency NMC supply</b><br/>NMC sitting in plain currency outputs at the chain tip — the spendable money supply outside of name registrations.<br/><br/><b>How it's calculated</b><br/>Sourced from <code>gettxoutsetinfo.amount.coins</code>. Namecoin Core walks the UTXO set and sums the value of every output whose <code>scriptPubKey</code> does <em>not</em> carry a <code>nameOp</code>. <code>amount.total = amount.coins + amount.names</code>.<br/><br/><b>How to read it</b><br/>• This is what circulates as money. Mining payouts that have not been spent into name outputs all live here.<br/>• 'NMC locked in names' (in the Names section) is the complement — NMC bound up in name UTXOs.")
 							.lead= parseFloat(utxoSetSummary.total_coins_amount).toLocaleString()
 							.small.text-muted Outside name outputs
 
 					if (nameTxStats)
 						.col-md-3.col-6.mb-3
-							div.text-muted.text-uppercase.small Currency txs / 24h
+							div.text-muted.text-uppercase.small
+								span Currency txs / 24h
+								+metricInfoBadge("<b>Currency txs over the last ≈24h</b><br/>Transactions in the last 144 blocks that did <em>not</em> carry any <code>nameOp</code> output.<br/><br/><b>How it's calculated</b><br/><code>totalTxCount − nameTxCount</code> from the same 144-block walk.<br/><br/><b>How to read it</b><br/>• These are plain NMC transfers, mining-reward sweeps, exchange flows — anything that does not touch the name database.<br/>• The percentage is the inverse of the Names percentage; on a busy name-update day this number can be remarkably small.")
 							.lead= nameTxStats.currencyTxCount.toLocaleString()
 							.small.text-muted #{(100 - nameTxStats.nameTxFraction * 100).toFixed(2)}% of all txs
 
 						.col-md-3.col-6.mb-3
-							div.text-muted.text-uppercase.small Currency tx rate
+							div.text-muted.text-uppercase.small
+								span Currency tx rate
+								+metricInfoBadge("<b>Currency tx rate</b><br/>Average number of <em>currency-only</em> transactions confirmed per minute over the last 144 blocks.<br/><br/><b>How it's calculated</b><br/><code>currencyTxCount / windowSeconds × 60</code><br/>using the same wall-clock window as the Name op rate.<br/><br/><b>How to read it</b><br/>• On Namecoin this is usually much lower than the Name op rate — the chain's main job is identity, not currency.<br/>• If currency rate spikes above the name rate, expect either a mining-reward redistribution or an exchange withdrawal flow.")
 							.lead #{(nameTxStats.currencyTxRate * 60).toFixed(2)}
 								span.small.ms-1 /min
 							.small.text-muted last 144 blocks (~24h)
 
 						.col-md-3.col-6.mb-3
-							div.text-muted.text-uppercase.small Total txs / 24h
+							div.text-muted.text-uppercase.small
+								span Total txs / 24h
+								+metricInfoBadge("<b>Total txs / 24h</b><br/>Total number of confirmed transactions across the last 144 blocks. Equal to <code>nameTxCount + currencyTxCount</code> for the same window.<br/><br/><b>How it's calculated</b><br/>Counted once per tx during the 144-block walk, regardless of whether it carries a name op. Coinbase txs are included.<br/><br/><b>How to read it</b><br/>• This is the chain-wide throughput baseline. Compare it against the same window in the existing 'Transaction Counts' chart further down the page — they should be in the same ballpark.")
 							.lead= nameTxStats.totalTxCount.toLocaleString()
 							.small.text-muted Currency + name txs combined
 
