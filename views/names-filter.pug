@@ -1,0 +1,39 @@
+extends layout
+
+block headContent
+	title Names filter \u2014 #{filterLabel}
+
+block content
+	+pageTitle(`Names filter: ${filterLabel}`)
+
+	if (userMessageMarkdown)
+		.alert.alert-danger
+			div!= userMessageMarkdown.replace(/`([^`]+)`/g, "<code>$1</code>")
+
+	if (filterDescription)
+		.alert.alert-info.small.mb-3
+			div= filterDescription
+
+	if (knownFilters && knownFilters.length)
+		.mb-3
+			span.text-muted.small.me-2 Other filters:
+			each f in knownFilters
+				if (f !== filter)
+					a.btn.btn-sm.btn-outline-secondary.me-2.mb-1(href=`./names/filter/${f}`)= f
+
+	if (namesSummaryPending && !namesSummary)
+		.alert.alert-warning.mb-3
+			div The name index is still being computed in the background. Filter results will appear once the first scan completes (typically within a minute on this node).
+
+	+contentSection(`${matchedCount.toLocaleString()} match${matchedCount === 1 ? "" : "es"}`)
+		if (truncated)
+			.alert.alert-warning.small.mb-3
+				div The cached match list is capped at #{matchedNames.length.toLocaleString()} names; the actual count is #{matchedCount.toLocaleString()}. Click through to individual names below to inspect their values, or use <code>/api/names</code> to enumerate the full set programmatically.
+
+		if (matchedNames.length === 0)
+			p.text-muted No matches.
+		else
+			.row.row-cols-1.row-cols-md-2.row-cols-lg-3.g-2
+				each name in matchedNames
+					.col
+						a.font-monospace.small.text-decoration-none.d-block.text-truncate(href=`./name/${encodeURIComponent(name)}`, title=name)= name

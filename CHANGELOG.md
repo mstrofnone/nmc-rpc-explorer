@@ -1,3 +1,24 @@
+##### nmc-3.6.8
+###### 2026-05-02
+
+**Filter block on `/utxo-set`** — above the by-namespace breakdown, surfaces a count of *active* names whose value carries each of six common shapes, with click-through to the matching list:
+
+* **Valid JSON** — names whose value parses as JSON (the convention for any structured Namecoin record).
+* **.onion** — names that publish a Tor v2/v3 onion address (NameID `tor`/`_tor` field, or any v3 .onion hostname embedded anywhere in the value).
+* **TLS** — names that publish TLSA records (ifa-0001 §tls).
+* **IP addresses** — names with `ip` / `ip4` / `ip6` fields, or any literal IPv4/IPv6 address embedded in the value.
+* **Nostr** — names that publish a Nostr identity (single-pubkey `nostr.pubkey` or multi-identity `nostr.names` map).
+* **I2P** — names with an `i2p` field or a `.b32.i2p` host embedded.
+
+Clicking any tile lands on `/names/filter/:filter`, which renders the cached list of matching names as a 3-column grid of monospace name links. The list is capped at 5,000 entries per filter so a chain with millions of matches can't blow up memory; a banner surfaces the truncation when present.
+
+Under the hood:
+
+* New `nameApi.classifyNameValue(parsed, rawValue)` returns the set of shape labels for one name's value. Backed by a depth-bounded `_collectStrings()` walker (haystack → single regex sweep) and a `_hasKeyDeep()` checker so the same helper handles `tor`/`_tor`/`tls`/`tlsa`/`ip`/`ip4`/`ip6`/`nostr`/`i2p` without re-implementation.
+* The existing 30-min `getNamesSummary()` walk now invokes the classifier on every active name and accumulates `filterCounts` + `filterLists` (capped) into `global.namesSummary`.
+* The classifier runs only on active (unexpired) names — expired names are still in the index but have no operational meaning, so we don't pay the parse cost for them.
+* New `/names/filter/:filter` route + `views/names-filter.pug` view render the matched list with cross-links to the other filters.
+
 ##### nmc-3.6.7
 ###### 2026-05-02
 

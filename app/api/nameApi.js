@@ -372,6 +372,122 @@ function parseNameIdFields(parsedValue) {
 }
 
 // ---------------------------------------------------------------------------
+// Value-shape filters — cheap detectors for what's INSIDE a name's value.
+// All inputs are the parsed JSON object from `renderNameValue` (or null/scalar).
+// Returning true means "this name's value carries one of <thing>". Used to
+// classify every name during the background scan so /utxo-set can show
+// counts and link through to the filtered list.
+// ---------------------------------------------------------------------------
+
+const ONION_RE = /\b[a-z2-7]{16,56}\.onion\b/i;
+const I2P_RE = /\b[a-z2-7]{52,60}\.b32\.i2p\b|\.i2p\b/i;
+const IPV4_RE = /\b(?:25[0-5]|2[0-4]\d|[01]?\d{1,2})(?:\.(?:25[0-5]|2[0-4]\d|[01]?\d{1,2})){3}\b/;
+const IPV6_RE = /\b(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{0,4}\b/i;
+
+// Collect every leaf string in a parsed JSON tree (depth-bounded). Used by the
+// filter detectors so we can scan all string values without writing custom
+// recursion in each one.
+function _collectStrings(value, out, depth) {
+	if (out.length > 4000) return; // hard cap so a pathological record can't OOM
+	if (depth > 12) return;
+	if (value == null) return;
+	if (typeof value === "string") {
+		if (value.length <= 4096) out.push(value);
+		return;
+	}
+	if (Array.isArray(value)) {
+		for (const v of value) _collectStrings(v, out, depth + 1);
+		return;
+	}
+	if (typeof value === "object") {
+		for (const k of Object.keys(value)) {
+			_collectStrings(value[k], out, depth + 1);
+		}
+	}
+}
+
+function _hasKeyDeep(obj, keyTest, depth = 0) {
+	if (depth > 12 || obj == null || typeof obj !== "object") return false;
+	for (const k of Object.keys(obj)) {
+		if (keyTest(k)) return true;
+		const v = obj[k];
+		if (v && typeof v === "object" && _hasKeyDeep(v, keyTest, depth + 1)) return true;
+	}
+	return false;
+}
+
+// Returns the set of value-shape labels this name's parsed value matches.
+// Inputs:
+//   parsed     — the JSON-parsed value (or null when value isn't JSON)
+//   rawValue   — the raw string value (used for non-JSON regex sweeps)
+function classifyNameValue(parsed, rawValue) {
+	const tags = new Set();
+	const hasJson = parsed != null && typeof parsed === "object";
+	if (hasJson) tags.add("json");
+
+	// Build a single big haystack of every string we can find. Cheaper than
+	// recursing through the same tree six different times.
+	const strings = [];
+	if (hasJson) _collectStrings(parsed, strings, 0);
+	if (typeof rawValue === "string" && rawValue.length <= 8192) strings.push(rawValue);
+	const haystack = strings.join("\n");
+
+	// .onion — v3 onions are 56 chars (a-z2-7), v2 are 16. Tor field on
+	// NameID records is also a clear marker even when string isn't a v3 host.
+	if (ONION_RE.test(haystack) ||
+		(hasJson && _hasKeyDeep(parsed, (k) => k === "tor" || k === "_tor"))) {
+		tags.add("onion");
+	}
+
+	// TLS — ifa-0001 §"tls": typically a `tls` field whose value is an array
+	// of TLSA tuples `[[usage, selector, mtype, hash], ...]`. We also accept
+	// any deeply-nested `tls` key.
+	if (hasJson && _hasKeyDeep(parsed, (k) => k === "tls" || k === "tlsa")) {
+		tags.add("tls");
+	}
+
+	// IPs — ifa-0001 fields `ip` (v4) and `ip6` (v6), or any literal address
+	// in any string value across the record.
+	if ((hasJson && _hasKeyDeep(parsed, (k) => k === "ip" || k === "ip4" || k === "ip6")) ||
+		IPV4_RE.test(haystack) || IPV6_RE.test(haystack)) {
+		tags.add("ip");
+	}
+
+	// Nostr — either a top-level `nostr` block, or an `nostr` key anywhere in
+	// the tree. parseNostrIdentities handles the actual extraction; here we
+	// just need a fast "is there one?" classifier.
+	if (hasJson && _hasKeyDeep(parsed, (k) => k === "nostr")) {
+		tags.add("nostr");
+	}
+
+	// I2P — a `i2p` key, or a b32.i2p host anywhere in the strings.
+	if ((hasJson && _hasKeyDeep(parsed, (k) => k === "i2p")) ||
+		I2P_RE.test(haystack)) {
+		tags.add("i2p");
+	}
+
+	return tags;
+}
+
+const FILTER_KEYS = ["json", "onion", "tls", "ip", "nostr", "i2p"];
+const FILTER_LABELS = {
+	json: "Valid JSON",
+	onion: ".onion",
+	tls: "TLS",
+	ip: "IP addresses",
+	nostr: "Nostr",
+	i2p: "I2P",
+};
+const FILTER_DESCRIPTIONS = {
+	json: "Names whose value parses as JSON. The Namecoin convention is to use JSON for any structured record (d/, id/, dd/, nft/, ...); a name without JSON is usually a one-line text payload.",
+	onion: "Names whose value carries a Tor v2/v3 onion address — either as a `tor` / `_tor` field (NameID convention) or as any v3 .onion hostname embedded anywhere in the value.",
+	tls: "Names that publish TLSA records (ifa-0001 §tls). The `tls` field is an array of `[usage, selector, mtype, hash]` tuples used to pin a host's TLS certificate via Namecoin instead of a public CA.",
+	ip: "Names that publish at least one IP address (`ip` / `ip4` / `ip6` field per ifa-0001, or a literal address anywhere in the value).",
+	nostr: "Names that publish a Nostr identity — either a single `nostr.pubkey` (NameID-style) or a multi-identity `nostr.names` map for NIP-05 delegation across subdomains.",
+	i2p: "Names that publish an I2P address — either an `i2p` field or a `.b32.i2p` host embedded in the value.",
+};
+
+// ---------------------------------------------------------------------------
 // Names summary scanner.
 //
 // `gettxoutsetinfo.amount.names` reports total NMC LOCKED in name outputs.
@@ -391,13 +507,16 @@ function parseNameIdFields(parsedValue) {
 //     elapsedMs:  <int>,
 //   }
 // ---------------------------------------------------------------------------
-async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefixes = null } = {}) {
+async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefixes = null, filterListCap = 5000 } = {}) {
 	const startedAt = Date.now();
 	const summary = {
 		total: 0,
 		active: 0,
 		expired: 0,
 		byNamespace: {},
+		filterCounts: { json: 0, onion: 0, tls: 0, ip: 0, nostr: 0, i2p: 0 },
+		filterLists: { json: [], onion: [], tls: [], ip: [], nostr: [], i2p: [] },
+		filterListCap,
 		scannedAt: null,
 		truncated: false,
 		pagesScanned: 0,
@@ -445,6 +564,29 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 				summary.byNamespace[ns].total++;
 				if (row.expired) summary.byNamespace[ns].expired++;
 				else summary.byNamespace[ns].active++;
+
+				// Value-shape classification — only run on active names so the
+				// filter counts reflect what's currently *resolvable*. Expired
+				// names are still in the index but have no operational meaning.
+				if (!row.expired) {
+					let parsed = null;
+					if (typeof row.value === "string") {
+						const trimmed = row.value.trim();
+						if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+							try { parsed = JSON.parse(trimmed); } catch (_e) { /* not json */ }
+						}
+					}
+					const tags = classifyNameValue(parsed, row.value);
+					for (const tag of tags) {
+						summary.filterCounts[tag]++;
+						// Cap per-filter lists so a chain with millions of matches
+						// can't blow up memory; the click-through page should treat
+						// the cap as a hint to query the live `/api/names` directly.
+						if (summary.filterLists[tag].length < filterListCap) {
+							summary.filterLists[tag].push(row.name);
+						}
+					}
+				}
 			}
 
 			// Cursor advancement: pick the LAST row whose `name` is a string we
@@ -508,4 +650,8 @@ module.exports = {
 	parseNameIdFields,
 	nip05ForLocalPart,
 	getNamesSummary,
+	classifyNameValue,
+	FILTER_KEYS,
+	FILTER_LABELS,
+	FILTER_DESCRIPTIONS,
 };

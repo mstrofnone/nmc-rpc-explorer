@@ -2718,6 +2718,45 @@ router.get("/mempool-name-ops", asyncHandler(async (req, res, next) => {
 	}
 }));
 
+// Names matching one of the value-shape filters surfaced on /utxo-set
+// (json / onion / tls / ip / nostr / i2p). Reads from the cached list that
+// the background `getNamesSummary()` walk populates — NOT live RPC, so the
+// page renders instantly. The list is capped (currently 5000 names per
+// filter); a banner surfaces that fact when truncation has occurred.
+router.get("/names/filter/:filter", asyncHandler(async (req, res, next) => {
+	const filter = String(req.params.filter || "").toLowerCase();
+	res.locals.filter = filter;
+	res.locals.filterLabel = nameApi.FILTER_LABELS[filter] || filter;
+	res.locals.filterDescription = nameApi.FILTER_DESCRIPTIONS[filter] || null;
+	res.locals.knownFilters = nameApi.FILTER_KEYS;
+	res.locals.namesSummary = global.namesSummary || null;
+	res.locals.namesSummaryPending = !!global.namesSummaryPending;
+
+	if (!nameApi.FILTER_KEYS.includes(filter)) {
+		res.status(404);
+		res.locals.userMessageMarkdown = `Unknown filter: \`${filter}\`. Known filters: ${nameApi.FILTER_KEYS.join(", ")}.`;
+		res.locals.matchedNames = [];
+		res.locals.matchedCount = 0;
+		res.locals.truncated = false;
+		res.render("names-filter");
+		return next();
+	}
+
+	let matchedNames = [];
+	let matchedCount = 0;
+	let truncated = false;
+	if (global.namesSummary && global.namesSummary.filterLists && global.namesSummary.filterCounts) {
+		matchedNames = global.namesSummary.filterLists[filter] || [];
+		matchedCount = global.namesSummary.filterCounts[filter] || 0;
+		truncated = matchedCount > matchedNames.length;
+	}
+	res.locals.matchedNames = matchedNames;
+	res.locals.matchedCount = matchedCount;
+	res.locals.truncated = truncated;
+	res.render("names-filter");
+	next();
+}));
+
 router.get("/names", asyncHandler(async (req, res, next) => {
 	try {
 		const start = req.query.start || "";

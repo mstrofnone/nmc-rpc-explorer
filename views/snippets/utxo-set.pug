@@ -85,6 +85,23 @@ else
 								+summaryItem("Registered names", "Count of unique names returned by Namecoin Core's name_scan.")
 									span.text-muted …
 									div.small.text-muted.mt-1 Computing in background
+						if (namesSummary && namesSummary.filterCounts)
+							.mt-3
+								div.text-muted.small.text-uppercase.mb-2
+									span Filter
+									span.ms-2.border-dotted(title="Counts of <em>active</em> names whose value carries each shape (valid JSON, .onion, TLSA records, IP addresses, Nostr identity, I2P address). Click any tile to see the matching names. Lists are sourced from the same 30-min background <code>name_scan</code> walk as the by-namespace breakdown above; per-filter lists are capped at 5,000 entries.", data-bs-toggle="tooltip", data-bs-html="true") (?)
+								.row.row-cols-2.row-cols-md-3.row-cols-lg-6.g-2
+									- var __filters = [{key:"json",label:"Valid JSON",icon:"bi-braces"},{key:"onion",label:".onion",icon:"bi-onion"},{key:"tls",label:"TLS",icon:"bi-shield-lock"},{key:"ip",label:"IP addresses",icon:"bi-hdd-network"},{key:"nostr",label:"Nostr",icon:"bi-broadcast-pin"},{key:"i2p",label:"I2P",icon:"bi-bezier2"}]
+									each __f in __filters
+										.col
+											a.text-decoration-none.d-block.h-100.p-3.rounded-2.border.border-card-highlight.text-body(href=`./names/filter/${__f.key}`)
+												div.small.text-muted= __f.label
+												div.h5.fw-light.mb-0.mt-1
+													- var __c = namesSummary.filterCounts[__f.key] || 0
+													span= __c.toLocaleString()
+												if (__c > 0 && namesSummary.active)
+													div.small.text-muted #{((__c / namesSummary.active) * 100).toFixed(1)}% of active
+
 						if (namesSummary && namesSummary.byNamespace && Object.keys(namesSummary.byNamespace).length)
 							.mt-3
 								div.text-muted.small.text-uppercase.mb-2 By namespace
