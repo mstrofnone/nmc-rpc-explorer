@@ -1,3 +1,42 @@
+##### nmc-3.6.15
+###### 2026-05-04
+
+**Browser tab favicon: serve the Namecoin-branded icon at the root
+paths browsers auto-probe (`/favicon.ico`, `/apple-touch-icon.png`,
+`/apple-touch-icon-precomposed.png`) instead of leaving a stale
+upstream Bitcoin icon there.**
+
+The HTML head emitted by `views/layout.pug` references the branded
+favicons under `./img/network-mainnet/...` and that's what most
+browsers honour first. But all browsers ALSO probe the root paths
+(`/favicon.ico`, `/apple-touch-icon.png`,
+`/apple-touch-icon-precomposed.png`) without a `?v=` query, and
+the explorer's `public/favicon.ico` was still the upstream
+Bitcoin-orange icon (15086 bytes, MD5 a2fb267...) inherited from
+btc-rpc-explorer. Two side effects:
+
+* Some browsers (and platform shortcut/recents UIs) latched onto
+  the orange Bitcoin icon for the explorer tab, while the
+  TLSA-pinned `https://explore.testls.bit/` origin happened to
+  pick up the Namecoin-blue one from the `<link rel="icon">`
+  tags. Net result: same explorer, two different favicons
+  depending on the URL.
+* `/apple-touch-icon.png` and `/apple-touch-icon-precomposed.png`
+  were 404ing constantly in the access log every time iOS Safari
+  hit the explorer.
+
+Fix: replace `public/favicon.ico` with the Namecoin-branded
+`public/img/network-mainnet/favicon.ico` (4265 bytes, blue "N",
+MD5 2ec8b40...), and stage matching
+`public/apple-touch-icon{,-precomposed}.png` copies of the
+branded `public/img/network-mainnet/apple-touch-icon.png` so
+the root-path probes both succeed and brand correctly.
+
+Note: browsers cache favicons aggressively per origin and the
+root-path probes don't carry the cache-busting `?v=` query, so
+existing visitors may see the stale icon until their browser's
+internal favicon cache expires (or they hard-refresh).
+
 ##### nmc-3.6.14
 ###### 2026-05-03
 
