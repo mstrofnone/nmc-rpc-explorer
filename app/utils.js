@@ -1620,9 +1620,11 @@ const awaitPromises = async (promises) => {
 
 	promiseResults.forEach(x => {
 		if (x.status == "rejected") {
-			if (x.reason) {
-				logError("awaitPromises_rejected", x.reason);
-			}
+			// Log every rejection, even falsy ones (e.g. `throw undefined`).
+			// Previously we silently swallowed these, which made downstream
+			// crashes ("Cannot read properties of undefined ...") look like
+			// they came from nowhere.
+			logError("awaitPromises_rejected", x.reason || new Error("rejection with no reason"));
 		}
 	});
 

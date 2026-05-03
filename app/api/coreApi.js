@@ -1216,14 +1216,26 @@ function getBlockByHashWithTransactions(blockHash, txLimit, txOffset) {
 	return new Promise(function(resolve, reject) {
 		getBlockByHash(blockHash).then(function(block) {
 			let txids = [];
-			
+
+			// On Namecoin, rpcApi.getBlockByHash uses `getblock <hash> 2` to pull
+			// the auxpow blob along with the block (NMC is merge-mined; the pool
+			// tag lives inside auxpow.tx.vin[0].coinbase). Verbosity 2 returns
+			// `block.tx` as an array of fully-decoded transaction OBJECTS rather
+			// than plain txid strings, so `block.tx[i]` may be either a string
+			// (Bitcoin or NMC verbosity-1 fallback) or an object with `.txid`.
+			// Without this normalisation `getRawTransaction(<object>, blockhash)`
+			// gets serialised into the JSON-RPC params as `[object Object]`, the
+			// node returns null, and the entire `/block-height/N` (and
+			// `/block/HASH`) route renders as a blank "Block: Error" page.
+			const toTxid = (entry) => (typeof entry === "string" ? entry : entry && entry.txid);
+
 			// to get miner info, always include the coinbase tx in the list
 			if (txOffset > 0) {
-				txids.push(block.tx[0]);
+				txids.push(toTxid(block.tx[0]));
 			}
 
 			for (let i = txOffset; i < Math.min(txOffset + txLimit, block.tx.length); i++) {
-				txids.push(block.tx[i]);
+				txids.push(toTxid(block.tx[i]));
 			}
 
 			getRawTransactionsWithInputs(txids, config.site.txMaxInput, blockHash).then(function(txsResult) {

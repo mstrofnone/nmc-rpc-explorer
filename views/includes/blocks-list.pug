@@ -163,11 +163,15 @@
 							td.text-end.d-none.d-lg-table-cell
 								if (blockstatsByHeight[block.height])
 									- var satValue = new Decimal(blockstatsByHeight[block.height].total_out).plus(blockstatsByHeight[block.height].subsidy).plus(blockstatsByHeight[block.height].totalfee);
-									- var currencyValue = parseInt(satValue.dividedBy(coinConfig.baseCurrencyUnit.multiplier));
-									- var currencyValueDecimals = 0;
+									//- Use the full-precision Decimal (in coin units) rather than truncating
+									//- to an integer. parseInt() previously dropped the fractional part, so a
+									//- single-coinbase Namecoin block at the post-halving 6.25 NMC reward
+									//- rendered as a flat "6 NMC".
+									- var currencyValue = satValue.dividedBy(coinConfig.baseCurrencyUnit.multiplier);
+									- var currencyValueDecimals = 4;
 
 									if (userSettings.displayCurrency == "btc")
-										+valueDisplaySpecial(currencyValue, 0)
+										+valueDisplaySpecial(currencyValue, currencyValueDecimals)
 
 									else
 										+valueDisplay(currencyValue)

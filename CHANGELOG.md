@@ -1,3 +1,66 @@
+##### nmc-3.6.14
+###### 2026-05-03
+
+**Fix `/block-height/N` + `/block/HASH` rendering as a blank "Block:
+Error" page on Namecoin, and stop rounding the `Volume` column to an
+integer.**
+
+Root cause of the block-page failure: `rpcApi.getBlockByHash` calls
+`getblock <hash> 2` on Namecoin so it can pull the auxpow blob along
+with the block (NMC is merge-mined; the pool tag lives inside
+`auxpow.tx.vin[0].coinbase`, which only verbosity 2 returns).
+Verbosity 2 also returns `block.tx` as an array of fully-decoded
+transaction OBJECTS rather than plain txid strings. Two call sites
+in the codebase iterated `block.tx[i]` as if it were a string and
+passed the raw object through to `getRawTransaction` /
+`getRawTransactions`, which serialised it into the JSON-RPC params
+as `[object Object]`, the node returned `null`, and the rejection
+bubbled up as a falsy `null` reason that `awaitPromises` silently
+swallowed. The route handler then dereferenced an undefined
+`getblock.hash` and crashed.
+
+`app/api/coreApi.js#getBlockByHashWithTransactions` — normalise
+`block.tx[i]` to a txid string (`typeof entry === "string" ? entry
+: entry.txid`) before pushing into the `txids` array.
+
+`routes/baseRouter.js#/snippet/recent-name-ops` — same fix; this is
+why the explorer log had a `recentNameOps01: undefined ... TypeError:
+Cannot read properties of undefined (reading 'message')` pair every
+time the homepage was hit (issue noted as outstanding in
+explorer3.txt).
+
+`routes/baseRouter.js` — both `/block-height/:blockHeight` and
+`/block/:blockHash` now also defensively guard
+`res.locals.result.getblock.hash` so a future inner-RPC failure
+renders the "Failed loading block" warning surface (which `block.pug`
+already supports) instead of crashing to a blank error page. The
+hardcoded `Bitcoin Block` meta-title strings are now
+`${coinConfig.name} Block`, matching the rest of the coin-aware
+branding.
+
+`app/api/rpcApi.js#getRawTransaction` — reject with a real `Error`
+describing the txid + blockhash, instead of the raw `null` / RPC
+error payload. The previous `Promise.reject(result)` with `result
+== null` produced a falsy reason that…
+
+`app/utils.js#awaitPromises` — … the diagnostic helper was
+silently dropping (its `if (x.reason)` filter skipped falsy
+rejections). Now it logs every rejection, substituting a
+placeholder `Error("rejection with no reason")` when the reason is
+falsy. Without this we couldn't see *which* inner promise had
+failed; the bug had been rendering as a blank `Block: Error` page
+for weeks with no log signal.
+
+`views/includes/blocks-list.pug` — the `Volume` column on `/blocks`
+was rounding the block volume down with `parseInt()` before passing
+it to `valueDisplay`. On Bitcoin that loses less than 1 BTC out of
+hundreds (invisible). On post-halving Namecoin, where most blocks
+contain only the 6.25 NMC coinbase, every such block rendered as a
+flat `6 NMC` and a 3-tx block at 31.2556 NMC rendered as `31 NMC`,
+wiping the fee tail. Now the full-precision `Decimal` is passed
+through; `formatCurrencyAmount` handles the trailing digits via
+`parts.lessSignificantDigits`.
+
 ##### nmc-3.6.13
 ###### 2026-05-03
 

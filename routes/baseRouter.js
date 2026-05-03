@@ -1134,8 +1134,17 @@ router.get("/block-height/:blockHeight", asyncHandler(async (req, res, next) => 
 		await utils.awaitPromises(promises);
 
 
-		if (global.specialBlocks && global.specialBlocks[res.locals.result.getblock.hash]) {
-			let funInfo = global.specialBlocks[res.locals.result.getblock.hash];
+		// Guard: getBlockByHashWithTransactions can fail (e.g. an inner getrawtransaction
+		// rejected and awaitPromises swallowed the rejection above). Without this guard
+		// the next line dereferences res.locals.result.getblock.hash on undefined and
+		// the whole /block-height/<n> route ends up rendering as `Block: Error` with the
+		// generic 'Cannot read properties of undefined (reading \'hash\')' page.
+		// The block.pug template already handles result.getblock being missing, so we
+		// just need to skip the specialBlocks lookup and pick a sensible meta title.
+		const __getblockForMeta = res.locals.result.getblock;
+
+		if (__getblockForMeta && global.specialBlocks && global.specialBlocks[__getblockForMeta.hash]) {
+			let funInfo = global.specialBlocks[__getblockForMeta.hash];
 
 			res.locals.metaTitle = funInfo.summary;
 
@@ -1146,7 +1155,7 @@ router.get("/block-height/:blockHeight", asyncHandler(async (req, res, next) => 
 				res.locals.metaDesc = "";
 			}
 		} else {
-			res.locals.metaTitle = `Bitcoin Block #${blockHeight.toLocaleString()}`;
+			res.locals.metaTitle = `${coinConfig.name} Block #${blockHeight.toLocaleString()}`;
 			res.locals.metaDesc = "";
 		}
 		
@@ -1235,8 +1244,13 @@ router.get("/block/:blockHash", asyncHandler(async (req, res, next) => {
 		await utils.awaitPromises(promises);
 
 
-		if (global.specialBlocks && global.specialBlocks[res.locals.result.getblock.hash]) {
-			let funInfo = global.specialBlocks[res.locals.result.getblock.hash];
+		// Mirror of the guard in /block-height/:blockHeight: if getBlockByHashWithTransactions
+		// silently rejected, res.locals.result.getblock is undefined and dereferencing .hash
+		// here would crash the whole route. block.pug already handles a missing getblock.
+		const __getblockForMeta = res.locals.result.getblock;
+
+		if (__getblockForMeta && global.specialBlocks && global.specialBlocks[__getblockForMeta.hash]) {
+			let funInfo = global.specialBlocks[__getblockForMeta.hash];
 
 			res.locals.metaTitle = funInfo.summary;
 
@@ -1247,8 +1261,12 @@ router.get("/block/:blockHash", asyncHandler(async (req, res, next) => {
 				res.locals.metaDesc = "";
 			}
 
+		} else if (__getblockForMeta) {
+			res.locals.metaTitle = `${coinConfig.name} Block ${utils.ellipsizeMiddle(__getblockForMeta.hash, 16)}`;
+			res.locals.metaDesc = "";
+
 		} else {
-			res.locals.metaTitle = `Bitcoin Block ${utils.ellipsizeMiddle(res.locals.result.getblock.hash, 16)}`;
+			res.locals.metaTitle = `${coinConfig.name} Block ${utils.ellipsizeMiddle(blockHash, 16)}`;
 			res.locals.metaDesc = "";
 		}
 
@@ -2574,11 +2592,18 @@ router.get("/snippet/recent-name-ops", asyncHandler(async (req, res, next) => {
 
 		const blocks = await coreApi.getBlocksByHeight(heights);
 		const txids = [];
+		// `block.tx[i]` is a string on Bitcoin / NMC verbosity-1, but on Namecoin
+		// rpcApi.getBlockByHash uses `getblock <hash> 2` to also pull auxpow
+		// and that returns full tx objects with a `.txid` field. Normalise so
+		// the downstream `getRawTransactions(txids)` doesn't end up serialising
+		// `[object Object]` into the JSON-RPC params.
+		const toTxid = (entry) => (typeof entry === "string" ? entry : entry && entry.txid);
 		for (const b of blocks) {
 			if (!b || !Array.isArray(b.tx)) continue;
 			// skip coinbase (first tx) — never carries name ops
 			for (let i = 1; i < b.tx.length && txids.length < 400; i++) {
-				txids.push(b.tx[i]);
+				const txid = toTxid(b.tx[i]);
+				if (txid) txids.push(txid);
 			}
 		}
 

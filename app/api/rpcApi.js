@@ -303,7 +303,12 @@ function getRawTransaction(txid, blockhash) {
 			let extra_params = blockhash ? [ blockhash ] : [];
 			getRpcDataWithParams({method:"getrawtransaction", parameters:[txid, 1, ...extra_params]}).then(function(result) {
 				if (result == null || result.code && result.code < 0) {
-					return Promise.reject(result);
+					// Always reject with a real Error instead of `null` / the raw RPC error
+					// payload, so upstream logging actually surfaces the failure (the
+					// previous `Promise.reject(result)` with a null result was getting
+					// silently dropped by `awaitPromises`' `if (x.reason)` filter).
+					let errMsg = `getrawtransaction returned ${result == null ? "null" : JSON.stringify(result)} for txid=${txid}${blockhash ? " blockhash=" + blockhash : ""}`;
+					return Promise.reject(new Error(errMsg));
 				}
 
 				resolve(result);
