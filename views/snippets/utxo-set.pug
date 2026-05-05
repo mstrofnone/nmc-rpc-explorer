@@ -183,6 +183,14 @@ else
 								div.text-muted.small.text-uppercase.mb-2
 									span By namespace
 									span.ms-2.border-dotted(title="Counts of names registered under each top-level namespace prefix (the part before the first <code>/</code>). <b>Active</b> names are still resolvable; <b>Expired</b> names live in the index but no longer resolve. Sourced from the same 30-min background <code>name_scan</code> walk.", data-bs-toggle="tooltip", data-bs-html="true") (?)
+								//- Compact landing view: render only the top 10 namespaces by
+								//- active count; the long tail (a real chain has 500+ ad-hoc
+								//- prefixes, most with single-digit counts) hides inside a
+								//- native <details> disclosure widget so it's one click away
+								//- but doesn't push every other section off the screen.
+								- var __nsKeys = Object.keys(namesSummary.byNamespace).sort((a,b) => namesSummary.byNamespace[b].active - namesSummary.byNamespace[a].active)
+								- var __nsPreview = __nsKeys.slice(0, 10)
+								- var __nsRest = __nsKeys.length > 10 ? __nsKeys.slice(10) : []
 								.table-responsive
 									table.table.table-sm.table-borderless.mb-0.small
 										thead
@@ -193,8 +201,7 @@ else
 												th.text-end.text-card-highlight.fw-light.text-uppercase Total
 												th.d-none.d-md-table-cell.text-card-highlight.fw-light.text-uppercase Description
 										tbody
-											- var __nsKeys = Object.keys(namesSummary.byNamespace).sort((a,b) => namesSummary.byNamespace[b].active - namesSummary.byNamespace[a].active)
-											each __ns in __nsKeys
+											each __ns in __nsPreview
 												- var __row = namesSummary.byNamespace[__ns]
 												tr
 													td.font-monospace= __ns === "(none)" ? "—" : (__ns + "/")
@@ -202,6 +209,28 @@ else
 													td.text-end.text-muted= __row.expired.toLocaleString()
 													td.text-end= __row.total.toLocaleString()
 													td.d-none.d-md-table-cell.text-muted.small= __ns === "(none)" ? "" : (nameApi && nameApi.namespaceLabel ? (nameApi.namespaceLabel(__ns) || "") : "")
+								if (__nsRest.length)
+									details.mt-2
+										summary.small.text-muted(style="cursor:pointer")
+											| Show remaining #{__nsRest.length.toLocaleString()} (#{__nsKeys.length.toLocaleString()} namespaces total)
+										.table-responsive.mt-2
+											table.table.table-sm.table-borderless.mb-0.small
+												thead
+													tr
+														th.text-card-highlight.fw-light.text-uppercase NS
+														th.text-end.text-card-highlight.fw-light.text-uppercase Active
+														th.text-end.text-card-highlight.fw-light.text-uppercase Expired
+														th.text-end.text-card-highlight.fw-light.text-uppercase Total
+														th.d-none.d-md-table-cell.text-card-highlight.fw-light.text-uppercase Description
+												tbody
+													each __ns in __nsRest
+														- var __row = namesSummary.byNamespace[__ns]
+														tr
+															td.font-monospace= __ns === "(none)" ? "—" : (__ns + "/")
+															td.text-end= __row.active.toLocaleString()
+															td.text-end.text-muted= __row.expired.toLocaleString()
+															td.text-end= __row.total.toLocaleString()
+															td.d-none.d-md-table-cell.text-muted.small= __ns === "(none)" ? "" : (nameApi && nameApi.namespaceLabel ? (nameApi.namespaceLabel(__ns) || "") : "")
 
 				if (utxoSetSummary.usingCoinStatsIndex)
 					span.small.text-muted Note: The above UTXO Set snapshot was produced using this node's <b>coin-stats index</b>; using this index affects which properties are available. Comparing the data above to a UTXO Set snapshot produced on a node without the coin-stats index enabled will look slightly different.

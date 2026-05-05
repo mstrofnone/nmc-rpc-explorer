@@ -1,3 +1,28 @@
+##### nmc-3.6.19
+###### 2026-05-05
+
+**`/utxo-set` &ldquo;By namespace&rdquo;: same compact-with-disclosure
+treatment as the `/names` page sections.**
+
+A real Namecoin chain has 500+ ad-hoc namespace prefixes (most with
+single-digit counts) sitting in the long tail of the `byNamespace`
+breakdown. Rendering all 507 rows pushed every section below it
+(including the by-namespace tooltip's own context) off-screen.
+
+Fix: render only the top 10 namespaces by active count in the
+landing view; wrap the remainder in a native HTML `<details>`
+disclosure widget with a summary reading &ldquo;Show remaining
+N (M namespaces total)&rdquo;. Same pattern as the `/names`
+&ldquo;About to expire&rdquo; / &ldquo;Recently expired&rdquo;
+sections shipped in nmc-3.6.18 — no JS, no AJAX, the hidden rows
+ride along in the same payload.
+
+Files touched:
+  * `views/snippets/utxo-set.pug` — split the byNamespace `<tbody>`
+    into a 10-row preview table plus a `<details>`-wrapped
+    remainder table (same columns: NS / Active / Expired / Total /
+    Description).
+
 ##### nmc-3.6.18
 ###### 2026-05-05
 
