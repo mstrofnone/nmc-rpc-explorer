@@ -587,14 +587,14 @@ const FILTER_DESCRIPTIONS = {
 //     recentlyExpired:     [ { name, expires_in, height }, ... ],   // sorted most-recently-expired first, capped
 //     expiringSoonTotal:   <int>,   // true count before capping
 //     recentlyExpiredTotal:<int>,
-//     expiringSoonBlocks:  <int>,   // window threshold (default 4320 ≈ 30 days)
-//     recentlyExpiredBlocks:<int>,  // window threshold (default 4320 ≈ 30 days)
+//     expiringSoonBlocks:  <int>,   // window threshold (default 2016 ≈ 2 weeks)
+//     recentlyExpiredBlocks:<int>,  // window threshold (default 2016 ≈ 2 weeks)
 //     scannedAt:  <ms epoch>,
 //     truncated:  <bool>,           // hit the per-prefix cap
 //     elapsedMs:  <int>,
 //   }
 // ---------------------------------------------------------------------------
-async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefixes = null, filterListCap = 5000, squatterTopN = 10, squatterSampleNames = 5, squatterMinCount = 2, squatterMaxValueLen = 4096, expiringSoonBlocks = 4320, recentlyExpiredBlocks = 4320, expiringListCap = 500 } = {}) {
+async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefixes = null, filterListCap = 5000, squatterTopN = 10, squatterSampleNames = 5, squatterMinCount = 2, squatterMaxValueLen = 4096, expiringSoonBlocks = 2016, recentlyExpiredBlocks = 2016, expiringListCap = 500 } = {}) {
 	const startedAt = Date.now();
 	// Squatter clustering: group names by their EXACT value string. Names
 	// registered in bulk by the same operator (typo-squat farms, parking

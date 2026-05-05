@@ -1,3 +1,28 @@
+##### nmc-3.6.17
+###### 2026-05-05
+
+**`/names`: move expiry sections below "Browse", tighten window
+to 2 weeks (2016 blocks).**
+
+Follow-up to nmc-3.6.16. Two refinements based on usage:
+
+* The expiry buckets are reference data, not the page entry point
+  — the live `name_scan` paginator should be the first thing a
+  visitor reaches. Moved both sections below "Browse".
+* The 30-day window (4320 blocks) was overlong for an at-a-glance
+  panel — 8.3k about-to-expire names is too many to scan. Tightened
+  the default to 2 weeks (2016 blocks at 10 min/block) for both
+  windows. Operators can still override via
+  `BTCEXP_NAMES_EXPIRING_SOON_BLOCKS` /
+  `BTCEXP_NAMES_RECENTLY_EXPIRED_BLOCKS`.
+
+Files touched:
+  * `views/names.pug` — expiry sections moved below the `name_scan`
+    "Browse" block.
+  * `app/api/nameApi.js` — default thresholds 4320 → 2016 for both
+    `expiringSoonBlocks` and `recentlyExpiredBlocks`; doc comment
+    updated.
+
 ##### nmc-3.6.16
 ###### 2026-05-05
 
@@ -15,20 +40,20 @@ sections, both populated from the existing 30-min background
 cost:
 
 * **About to expire** — active names whose `expires_in` is between
-  1 and `BTCEXP_NAMES_EXPIRING_SOON_BLOCKS` blocks (default 4320
-  ≈ 30 days at 10 min/block). Closest-to-expiring first.
+  1 and `BTCEXP_NAMES_EXPIRING_SOON_BLOCKS` blocks (default 2016
+  ≈ 2 weeks at 10 min/block). Closest-to-expiring first.
 * **Recently expired** — expired names whose `expires_in` is
   between `-BTCEXP_NAMES_RECENTLY_EXPIRED_BLOCKS` and 0
-  (default 4320 ≈ 30 days). Most-recently-expired first.
+  (default 2016 ≈ 2 weeks). Most-recently-expired first.
 
 Both lists are capped at 500 entries to bound memory; `Total`
 counts in the section header reflect the true number of matching
 names before the cap. Each row links to `/name/<name>` and to the
 last `name_update` block.
 
-While any expiring/recently-expired names exist in the summary,
-the sections render between the existing "How Namecoin names work"
-lifecycle docs and the "Browse" `name_scan` UI. If the background
+Both sections render below the existing "Browse" `name_scan`
+UI — the live `name_scan` paginator stays the entry point for the
+page; the expiry buckets are reference data underneath. If the background
 scan is still pending on first boot, a placeholder message points
 at the 30-min refresh interval. If the chain has zero names in
 either bucket, both sections are suppressed (no empty tables).

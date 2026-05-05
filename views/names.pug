@@ -49,6 +49,59 @@ block content
 			<a href="https://github.com/namecoin/namecoin-core/blob/master/doc/namecoin.md" target="_blank" rel="noopener">36,000 blocks (~250 days)</a>
 			the name expires and anyone can re-register it.
 
+	+contentSection("Browse")
+		p.text-muted.small.mb-3.
+			This browser walks the chain via Namecoin Core's
+			<code>name_scan</code> RPC.  Names are returned in
+			<strong>lexicographic byte order</strong> starting at the value of the
+			&quot;Start at name&quot; field (inclusive) &mdash; not by registration
+			date, height, or value.  Scan starting at <code>d/</code> to step
+			through every <code>d/</code> name in alphabetical order, or paste a
+			specific name to resume from there.  Expired names are still listed
+			by <code>name_scan</code> and are flagged with the
+			<span class="badge bg-danger">Expired</span> badge below.
+
+		form.row.g-2.mb-3(method="get", action="./names")
+			.col-md-7
+				input.form-control.font-monospace(type="text", name="start", value=nameStart, placeholder="Start at name (e.g. d/, d/testls, id/alice)")
+			.col-md-2
+				input.form-control(type="number", name="count", min="1", max="200", value=nameCount, title="Number of names to return (max 200)")
+			.col-md-2
+				button.btn.btn-primary.w-100(type="submit") Scan
+
+		if (nameRows && nameRows.length)
+			.table-responsive
+				table.table.table-sm.mb-0
+					thead
+						tr
+							th Name
+							th NS
+							th Height
+							th Expires in
+							th Value (preview)
+					tbody
+						each row in nameRows
+							tr
+								td
+									a.font-monospace.small(href=`./name/${encodeURIComponent(row.name)}`)= row.name
+								td
+									if (row.namespace.namespace)
+										span.badge.bg-secondary= row.namespace.namespace
+								td
+									a(href=`./block-height/${row.height}`)= row.height
+								td
+									if (row.expired)
+										span.badge.bg-danger Expired
+									else
+										span= row.expires_in
+								td.text-truncate(style="max-width:30rem")
+									if (row.valueRender.kind === "json")
+										code.small= JSON.stringify(row.valueRender.parsed).slice(0, 120)
+									else
+										code.small= (row.valueRender.display || "").slice(0, 120)
+		else
+			div.text-muted No names returned for this scan window.
+
 	if (namesSummary && namesSummary.expiringSoon && namesSummary.expiringSoon.length)
 		+contentSection("About to expire")
 			p.text-muted.small.mb-3.
@@ -133,67 +186,10 @@ block content
 								td
 									span.badge.bg-danger= `${Math.abs(row.expires_in).toLocaleString()} blocks ago`
 
-	else if (namesSummary && (namesSummary.expiringSoon || namesSummary.recentlyExpired))
-		// Background scan finished but found no rows in either expiry window;
-		// suppress the sections entirely rather than showing two empty tables.
-
-	else if (namesSummaryPending)
+	else if (namesSummaryPending && !(namesSummary && namesSummary.expiringSoon && namesSummary.expiringSoon.length))
 		+contentSection("About to expire / Recently expired")
 			p.text-muted.small.mb-0.
-				The background <code>name_scan</code> walk hasn't finished yet —
+				The background <code>name_scan</code> walk hasn't finished yet &mdash;
 				the expiring / expired sections will appear here once the first
 				refresh completes (typically within ~30 seconds of explorer
 				boot).
-
-	+contentSection("Browse")
-		p.text-muted.small.mb-3.
-			This browser walks the chain via Namecoin Core's
-			<code>name_scan</code> RPC.  Names are returned in
-			<strong>lexicographic byte order</strong> starting at the value of the
-			&quot;Start at name&quot; field (inclusive) &mdash; not by registration
-			date, height, or value.  Scan starting at <code>d/</code> to step
-			through every <code>d/</code> name in alphabetical order, or paste a
-			specific name to resume from there.  Expired names are still listed
-			by <code>name_scan</code> and are flagged with the
-			<span class="badge bg-danger">Expired</span> badge below.
-
-		form.row.g-2.mb-3(method="get", action="./names")
-			.col-md-7
-				input.form-control.font-monospace(type="text", name="start", value=nameStart, placeholder="Start at name (e.g. d/, d/testls, id/alice)")
-			.col-md-2
-				input.form-control(type="number", name="count", min="1", max="200", value=nameCount, title="Number of names to return (max 200)")
-			.col-md-2
-				button.btn.btn-primary.w-100(type="submit") Scan
-
-		if (nameRows && nameRows.length)
-			.table-responsive
-				table.table.table-sm.mb-0
-					thead
-						tr
-							th Name
-							th NS
-							th Height
-							th Expires in
-							th Value (preview)
-					tbody
-						each row in nameRows
-							tr
-								td
-									a.font-monospace.small(href=`./name/${encodeURIComponent(row.name)}`)= row.name
-								td
-									if (row.namespace.namespace)
-										span.badge.bg-secondary= row.namespace.namespace
-								td
-									a(href=`./block-height/${row.height}`)= row.height
-								td
-									if (row.expired)
-										span.badge.bg-danger Expired
-									else
-										span= row.expires_in
-								td.text-truncate(style="max-width:30rem")
-									if (row.valueRender.kind === "json")
-										code.small= JSON.stringify(row.valueRender.parsed).slice(0, 120)
-									else
-										code.small= (row.valueRender.display || "").slice(0, 120)
-		else
-			div.text-muted No names returned for this scan window.
