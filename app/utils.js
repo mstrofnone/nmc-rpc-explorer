@@ -1613,6 +1613,31 @@ function tryParseAddress(address) {
 }
 
 
+// Build a URL path for a Namecoin name detail page.
+//
+// Namecoin names use the form "<namespace>/<label>" (e.g. "d/testls",
+// "id/m"). The naive `"./name/" + encodeURIComponent(name)` form encodes
+// the separator slash as `%2F`, which Apache rejects with a 404 by
+// default (`AllowEncodedSlashes Off`). To stay reverse-proxy friendly
+// we split on the first slash and emit a literal path separator while
+// still percent-encoding any reserved characters in the namespace and
+// label individually. The /name/* route uses a regex capture, so a
+// literal slash in the URL is matched correctly.
+function nameUrl(name) {
+	if (typeof name !== "string" || name.length === 0) {
+		return "./name/";
+	}
+
+	const idx = name.indexOf("/");
+	if (idx < 0) {
+		return "./name/" + encodeURIComponent(name);
+	}
+
+	const ns = name.slice(0, idx);
+	const label = name.slice(idx + 1);
+	return "./name/" + encodeURIComponent(ns) + "/" + encodeURIComponent(label);
+}
+
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const awaitPromises = async (promises) => {
@@ -1757,6 +1782,7 @@ module.exports = {
 	awaitPromises: awaitPromises,
 	perfLogNewItem: perfLogNewItem,
 	perfLog: perfLog,
+	nameUrl: nameUrl,
 	fileCache: fileCache,
 	expressRequestToJson: expressRequestToJson,
 	trackAppEvent: trackAppEvent

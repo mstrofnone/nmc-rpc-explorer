@@ -22,7 +22,7 @@ mixin nameOpInlineBadges(rows)
 			span.me-2(data-bs-toggle="tooltip", title=row.name ? `${row.op}: ${row.name}` : row.op)
 				+nameOpBadge(row.op)
 				if (row.name)
-					a.ms-1.font-monospace.small(href=`./name/${encodeURIComponent(row.name)}`)= row.name
+					a.ms-1.font-monospace.small(href=utils.nameUrl(row.name))= row.name
 
 // Full per-op panel: op badge + name link + decoded value (truncated).
 // Suitable for a content-section under a tx row in mempool/next-block views.
@@ -32,7 +32,7 @@ mixin nameOpRowCompact(row)
 		.d-flex.flex-wrap.align-items-center.gap-2.mb-1
 			+nameOpBadge(row.op)
 			if (row.name)
-				a.font-monospace(href=`./name/${encodeURIComponent(row.name)}`)= row.name
+				a.font-monospace(href=utils.nameUrl(row.name))= row.name
 				if (row.namespace && row.namespace.namespace)
 					span.badge.bg-secondary.fw-light= row.namespace.namespace
 			if (row.vout !== null)

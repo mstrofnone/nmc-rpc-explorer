@@ -160,7 +160,7 @@ else
 												td.d-none.d-lg-table-cell.small.font-monospace.text-muted
 													- var __sampleCount = (__c.sampleNames || []).length
 													each __n, __si in __c.sampleNames
-														a.text-muted(href=`./name/${encodeURIComponent(__n)}`)= __n
+														a.text-muted(href=utils.nameUrl(__n))= __n
 														if (__si < __sampleCount - 1)
 															| , 
 

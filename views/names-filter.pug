@@ -36,4 +36,4 @@ block content
 			.row.row-cols-1.row-cols-md-2.row-cols-lg-3.g-2
 				each name in matchedNames
 					.col
-						a.font-monospace.small.text-decoration-none.d-block.text-truncate(href=`./name/${encodeURIComponent(name)}`, title=name)= name
+						a.font-monospace.small.text-decoration-none.d-block.text-truncate(href=utils.nameUrl(name), title=name)= name

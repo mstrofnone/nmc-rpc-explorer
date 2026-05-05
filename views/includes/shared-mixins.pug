@@ -191,7 +191,7 @@ mixin txList(visibleTxs, txCount, limit, offset, inputsByTxid, options={})
 									span.ms-2(data-bs-toggle="tooltip", title=__nrow.name ? `${__nrow.op}: ${__nrow.name}` : __nrow.op)
 										+nameOpBadge(__nrow.op)
 										if (__nrow.name)
-											a.ms-1.font-monospace.small(href=`./name/${encodeURIComponent(__nrow.name)}`)= __nrow.name
+											a.ms-1.font-monospace.small(href=utils.nameUrl(__nrow.name))= __nrow.name
 
 
 

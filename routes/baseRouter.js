@@ -989,8 +989,11 @@ router.post("/search", function(req, res, next) {
 	req.session.query = req.body.query;
 
 	// Namecoin name lookup: <namespace>/<label> (e.g. d/testls, id/m).
+	// Use utils.nameUrl so the namespace separator stays a literal `/` in
+	// the redirect path: Apache (a common reverse proxy) rejects encoded
+	// slashes (%2F) with 404 by default (AllowEncodedSlashes Off).
 	if (config.coin == "NMC" && /^[a-z0-9_]+\/[\x20-\x7e]{1,250}$/.test(rawCaseQuery)) {
-		return res.redirect("./name/" + encodeURIComponent(rawCaseQuery));
+		return res.redirect(utils.nameUrl(rawCaseQuery));
 	}
 
 	// xpub/ypub/zpub -> redirect: /xyzpub/XXX

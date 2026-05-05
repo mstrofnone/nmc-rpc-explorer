@@ -180,6 +180,17 @@ block endOfBody
 			return String(s).replace(/[<>&]/g, function(c){return {"<":"&lt;",">":"&gt;","&":"&amp;"}[c];});
 		}
 
+		// Build a /name/<namespace>/<label> URL keeping the namespace separator
+		// as a literal `/` so Apache (default AllowEncodedSlashes Off) doesn't
+		// 404 the request. Mirrors the server-side utils.nameUrl helper.
+		function nameUrl(name) {
+			if (typeof name !== "string" || name.length === 0) return "./name/";
+			var idx = name.indexOf("/");
+			if (idx < 0) return "./name/" + encodeURIComponent(name);
+			return "./name/" + encodeURIComponent(name.slice(0, idx))
+				+ "/" + encodeURIComponent(name.slice(idx + 1));
+		}
+
 		function renderNameOpRow(op, opts) {
 			var badgeColor = (op.op === "name_firstupdate") ? "bg-success"
 				: (op.op === "name_update") ? "bg-primary"
@@ -188,7 +199,7 @@ block endOfBody
 				? '<span class="badge bg-warning text-dark ms-1" title="In mempool, not yet confirmed">pending</span>'
 				: '';
 			var nameCell = op.name
-				? '<a class="font-monospace small" href="./name/' + encodeURIComponent(op.name) + '">' + escapeHtml(op.name) + '</a>'
+				? '<a class="font-monospace small" href="' + nameUrl(op.name) + '">' + escapeHtml(op.name) + '</a>'
 				: '<span class="text-muted small">(name_new commitment)</span>';
 			var valuePreview = op.valuePreview
 				? '<code class="small">' + escapeHtml(op.valuePreview) + '</code>'

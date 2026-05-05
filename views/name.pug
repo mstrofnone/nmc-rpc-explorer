@@ -117,7 +117,7 @@ block content
 											else
 												span.text-muted ↳
 										td
-											a.font-monospace(href=`./name/${encodeURIComponent(imp.name)}`)= imp.name
+											a.font-monospace(href=utils.nameUrl(imp.name))= imp.name
 										td
 											if (imp.selector)
 												code.small= imp.selector

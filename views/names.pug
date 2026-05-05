@@ -22,7 +22,7 @@ block content
 				code d/&lt;name&gt;
 				span.font-sans-serif.ms-2.text-muted
 					| .bit domain (the original Namecoin TLD). Example:
-					a.ms-1(href=`./name/${encodeURIComponent("d/testls")}`) d/testls
+					a.ms-1(href=utils.nameUrl("d/testls")) d/testls
 					|  resolves
 					span.ms-1 testls.bit
 			li
@@ -83,7 +83,7 @@ block content
 						each row in nameRows
 							tr
 								td
-									a.font-monospace.small(href=`./name/${encodeURIComponent(row.name)}`)= row.name
+									a.font-monospace.small(href=utils.nameUrl(row.name))= row.name
 								td
 									if (row.namespace.namespace)
 										span.badge.bg-secondary= row.namespace.namespace
@@ -152,7 +152,7 @@ block content
 							- var __ns = __slash > 0 ? row.name.substring(0, __slash) : null
 							tr
 								td
-									a.font-monospace.small(href=`./name/${encodeURIComponent(row.name)}`)= row.name
+									a.font-monospace.small(href=utils.nameUrl(row.name))= row.name
 								td
 									if (__ns)
 										span.badge.bg-secondary= __ns
@@ -180,7 +180,7 @@ block content
 									- var __ns = __slash > 0 ? row.name.substring(0, __slash) : null
 									tr
 										td
-											a.font-monospace.small(href=`./name/${encodeURIComponent(row.name)}`)= row.name
+											a.font-monospace.small(href=utils.nameUrl(row.name))= row.name
 										td
 											if (__ns)
 												span.badge.bg-secondary= __ns
@@ -225,7 +225,7 @@ block content
 							- var __ns = __slash > 0 ? row.name.substring(0, __slash) : null
 							tr
 								td
-									a.font-monospace.small(href=`./name/${encodeURIComponent(row.name)}`)= row.name
+									a.font-monospace.small(href=utils.nameUrl(row.name))= row.name
 								td
 									if (__ns)
 										span.badge.bg-secondary= __ns
@@ -253,7 +253,7 @@ block content
 									- var __ns = __slash > 0 ? row.name.substring(0, __slash) : null
 									tr
 										td
-											a.font-monospace.small(href=`./name/${encodeURIComponent(row.name)}`)= row.name
+											a.font-monospace.small(href=utils.nameUrl(row.name))= row.name
 										td
 											if (__ns)
 												span.badge.bg-secondary= __ns

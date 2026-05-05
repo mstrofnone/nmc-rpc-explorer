@@ -31,7 +31,7 @@ block content
 					.col-md-6
 						div.text-muted.small Name
 						div
-							a.font-monospace(href=`./name/${encodeURIComponent(row.name)}`)= row.name
+							a.font-monospace(href=utils.nameUrl(row.name))= row.name
 							if (row.namespace && row.namespace.namespace)
 								span.badge.bg-secondary.ms-2= row.namespace.namespace
 							if (row.priorHeight)
@@ -65,7 +65,7 @@ block content
 									span.text-muted at top level:
 								each imp in entry.imports
 									span.ms-2
-										a(href=`./name/${encodeURIComponent(imp.name)}`)= imp.name
+										a(href=utils.nameUrl(imp.name))= imp.name
 										if (imp.selector)
 											span.text-muted.small.ms-1 (selector: <code>#{imp.selector}</code>)
 								if (entry.malformed)

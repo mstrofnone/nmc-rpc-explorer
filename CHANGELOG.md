@@ -1,3 +1,40 @@
+##### nmc-3.6.20
+###### 2026-05-05
+
+**Search for `d/<label>` (and any other `<namespace>/<label>` name) no
+longer 404s behind Apache.**
+
+`POST /search` with a Namecoin name redirected to
+`/name/<encodeURIComponent(name)>`, which produced URLs like
+`/name/d%2Ftestls`. Apache's default `AllowEncodedSlashes Off` rejects
+any request whose path contains a percent-encoded slash with 404 before
+Node ever sees it. The bug was invisible when hitting the explorer
+directly on `:3002`, only reproducible through the `explore.testls.bit`
+Apache vhost (and any other reverse-proxy deployment).
+
+Fix: a new `utils.nameUrl(name)` helper splits the name on the FIRST
+`/` (the namespace separator) and only percent-encodes the namespace
+and label individually, leaving the path separator literal. The
+`/name/(.+)` route regex captures multi-segment paths fine and
+`decodeURIComponent` on the captured tail is a no-op for plain names.
+
+Applied at the search redirect plus 14 in-template href builders
+across views (homepage, transaction page, /names, /names/filter,
+/mempool-name-ops, /utxo-set, name-op mixins, name detail page).
+The homepage's client-side `renderNameOpRow` (JSON-driven recent
+name-ops tile) ships a mirror copy of the helper so JSON hydration
+produces the same reverse-proxy-safe URLs.
+
+Files touched:
+  * `app/utils.js` — `nameUrl(name)` helper + module export.
+  * `routes/baseRouter.js` — `POST /search` Namecoin redirect.
+  * `views/index.pug` — client-side `nameUrl` + `renderNameOpRow`.
+  * `views/name.pug`, `views/names.pug`, `views/names-filter.pug`,
+    `views/mempool-name-ops.pug`, `views/transaction.pug`,
+    `views/snippets/utxo-set.pug`,
+    `views/includes/name-op-mixins.pug`,
+    `views/includes/shared-mixins.pug` — `href` builders.
+
 ##### nmc-3.6.19
 ###### 2026-05-05
 

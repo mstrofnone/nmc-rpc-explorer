@@ -215,7 +215,7 @@ block content
 										.col-md-6
 											div.text-muted.small Name
 											div
-												a.font-monospace(href=`./name/${encodeURIComponent(__op.name)}`)= __op.name
+												a.font-monospace(href=utils.nameUrl(__op.name))= __op.name
 								if (__isNew)
 									.row.g-2
 										.col-12
