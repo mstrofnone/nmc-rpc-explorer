@@ -1617,8 +1617,14 @@ router.get("/address/:address", asyncHandler(async (req, res, next) => {
 
 		if (global.miningPoolsConfigs) {
 			for (let i = 0; i < global.miningPoolsConfigs.length; i++) {
-				if (global.miningPoolsConfigs[i].payout_addresses[address]) {
-					res.locals.payoutAddressForMiner = global.miningPoolsConfigs[i].payout_addresses[address];
+				// Not every pool config carries `payout_addresses` — e.g. the
+				// Namecoin merge-mined config ships only `coinbase_tags`
+				// (pool attribution rides on the BTC parent coinbase, not on
+				// an NMC payout address). Guard the indexed access so a
+				// missing map doesn't 500 the address page.
+				const payouts = global.miningPoolsConfigs[i].payout_addresses;
+				if (payouts && payouts[address]) {
+					res.locals.payoutAddressForMiner = payouts[address];
 				}
 			}
 		}

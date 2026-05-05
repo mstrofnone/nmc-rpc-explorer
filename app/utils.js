@@ -1551,47 +1551,76 @@ function tryParseAddress(address) {
 
 	let parsedAddress = null;
 
-	let b58prefix = (global.activeBlockchain == "main" ? /^[13].*$/ : /^[2mn].*$/);
-	if (address.match(b58prefix)) {
-		try {
-			parsedAddress = bitcoinjs.address.fromBase58Check(address);
-			parsedAddress.hash = parsedAddress.hash.toString("hex");
+	// Bech32/Bech32m encoded addresses are strictly all-lowercase OR
+	// all-uppercase per BIP-173/BIP-350 — the underlying bech32 library
+	// throws "Mixed-case string" loudly when fed anything else, including
+	// every base58 address. Detect mixed case up front so we can skip the
+	// bech32 attempts entirely and avoid the noisy throw.
+	//
+	// The old Bitcoin-specific `^[13]` prefix regex gated whether base58
+	// was tried at all, which meant Namecoin's `M`/`N` (P2PKH, version
+	// byte 0x34) and `6` (P2SH, 0x0d) addresses fell through to bech32 and
+	// triggered the mixed-case throw. Drop the prefix gate and let the
+	// base58 library decide; the version byte is whatever the chain says
+	// it is, and bitcoinjs.address.fromBase58Check verifies the checksum
+	// either way.
+	const isUniformCase = address === address.toLowerCase()
+		|| address === address.toUpperCase();
 
+	const tryBase58 = () => {
+		try {
+			const parsed = bitcoinjs.address.fromBase58Check(address);
+			parsed.hash = parsed.hash.toString("hex");
 			return {
 				encoding: "base58",
-				parsedAddress: parsedAddress
+				parsedAddress: parsed,
 			};
-
 		} catch (err) {
 			base58Error = err;
+			return null;
 		}
-	}
+	};
 
-	try {
-		parsedAddress = bitcoinjs.address.fromBech32(address);
-		parsedAddress.data = parsedAddress.data.toString("hex");
+	const tryBech32 = () => {
+		if (!isUniformCase) return null;
+		try {
+			const parsed = bitcoinjs.address.fromBech32(address);
+			parsed.data = parsed.data.toString("hex");
+			return {
+				encoding: "bech32",
+				parsedAddress: parsed,
+			};
+		} catch (err) {
+			bech32Error = err;
+			return null;
+		}
+	};
 
-		return {
-			encoding: "bech32",
-			parsedAddress: parsedAddress
-		};
+	const tryBech32m = () => {
+		if (!isUniformCase) return null;
+		try {
+			const parsed = bech32m.decode(address);
+			parsed.words = Buffer.from(parsed.words).toString("hex");
+			return {
+				encoding: "bech32m",
+				parsedAddress: parsed,
+			};
+		} catch (err) {
+			bech32mError = err;
+			return null;
+		}
+	};
 
-	} catch (err) {
-		bech32Error = err;
-	}
+	// When the input is uniform-case, try bech32 first (it's the modern
+	// segwit format and decode is fast); fall back to base58. Mixed-case
+	// inputs go straight to base58.
+	const attempts = isUniformCase
+		? [tryBech32, tryBech32m, tryBase58]
+		: [tryBase58];
 
-
-	try {
-		parsedAddress = bech32m.decode(address);
-		parsedAddress.words = Buffer.from(parsedAddress.words).toString("hex");
-
-		return {
-			encoding: "bech32m",
-			parsedAddress: parsedAddress
-		};
-
-	} catch (err) {
-		bech32mError = err;
+	for (const attempt of attempts) {
+		const result = attempt();
+		if (result) return result;
 	}
 	
 

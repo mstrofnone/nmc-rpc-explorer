@@ -1,3 +1,51 @@
+##### nmc-3.6.21
+###### 2026-05-05
+
+**`/address/<addr>` no longer 500s on Namecoin addresses.**
+
+Two independent bugs were ganged up on every Namecoin address page,
+with the visible error depending on which encoding the address used.
+
+*Bug 1 — `payout_addresses` indexed access on a config that lacks it.*
+`global.miningPoolsConfigs` is the parsed JSON of every file under
+`public/txt/mining-pools-configs/<COIN>/`. The Namecoin merge-mined
+config (shipped in nmc-3.6.0) carries only `coinbase_tags` — pool
+attribution rides on the BTC parent coinbase via the auxpow blob, so
+we never built a Namecoin payout-address map. The address handler
+then evaluated
+
+    global.miningPoolsConfigs[i].payout_addresses[address]
+
+which threw `TypeError: Cannot read properties of undefined (reading
+'<addr>')` for every visit. `for...in` callers (in `app.js` boot and
+`utils.js` miner-info lookup) silently no-op'd over the missing key,
+so the bug only surfaced on the address handler's direct property
+access.
+
+Fix: guard `payout_addresses` with `&&` before indexing; pull the map
+into a local `payouts` so future readers can see what's optional.
+
+*Bug 2 — `tryParseAddress` mis-classified Namecoin base58 addresses.*
+The old `b58prefix = /^[13].*$/` regex was Bitcoin-mainnet-specific.
+It skipped Namecoin's `M` / `N` (P2PKH, version byte 0x34) and `6`
+(P2SH, version byte 0x0d) addresses, which then fell through to
+`bitcoinjs.address.fromBech32` — and the underlying bech32 library
+explicitly throws `Mixed-case string` on any input that isn't strictly
+all-lowercase or all-uppercase. So a search for `MyHsUFXoVgm3BPCP3GXjejQCDCnUc3JJ6a`
+piled three errors onto the address page.
+
+Fix: drop the chain-specific prefix regex — the version byte is
+whatever the chain says it is, and `fromBase58Check` verifies the
+checksum either way. Detect uniform case up front and only attempt
+bech32/bech32m for uniform-case input; mixed-case goes straight to
+base58. Bonus: bech32 (the modern segwit format) is now tried first
+for uniform-case input, with base58 as the fallback.
+
+Files touched:
+  * `app/utils.js` — `tryParseAddress` rewritten as three guarded
+    decoders selected by uniform-case detection.
+  * `routes/baseRouter.js` — `payout_addresses` lookup guarded.
+
 ##### nmc-3.6.20
 ###### 2026-05-05
 
