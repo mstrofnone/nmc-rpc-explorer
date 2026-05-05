@@ -857,8 +857,17 @@ async function refreshNamesSummary() {
 	}
 	global.namesSummaryPending = true;
 	try {
-		global.namesSummary = await nameApi.getNamesSummary();
-		debugLog(`Refreshed names summary: total=${global.namesSummary.total} active=${global.namesSummary.active} expired=${global.namesSummary.expired} elapsedMs=${global.namesSummary.elapsedMs}`);
+		// Optional env-var overrides for the expiry window thresholds. Both
+		// default to ~30 days (4320 blocks) when unset; operators wiring this
+		// up against a non-mainnet chain (faster blocks) can shrink the window
+		// without rebuilding.
+		const opts = {};
+		const expSoon = parseInt(process.env.BTCEXP_NAMES_EXPIRING_SOON_BLOCKS, 10);
+		if (Number.isFinite(expSoon) && expSoon > 0) opts.expiringSoonBlocks = expSoon;
+		const expRecent = parseInt(process.env.BTCEXP_NAMES_RECENTLY_EXPIRED_BLOCKS, 10);
+		if (Number.isFinite(expRecent) && expRecent > 0) opts.recentlyExpiredBlocks = expRecent;
+		global.namesSummary = await nameApi.getNamesSummary(opts);
+		debugLog(`Refreshed names summary: total=${global.namesSummary.total} active=${global.namesSummary.active} expired=${global.namesSummary.expired} expiringSoon=${global.namesSummary.expiringSoonTotal} recentlyExpired=${global.namesSummary.recentlyExpiredTotal} elapsedMs=${global.namesSummary.elapsedMs}`);
 	} catch (e) {
 		debugLog("refreshNamesSummary error: " + e.message);
 		global.namesSummary = null;

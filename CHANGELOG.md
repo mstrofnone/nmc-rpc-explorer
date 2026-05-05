@@ -1,3 +1,59 @@
+##### nmc-3.6.16
+###### 2026-05-05
+
+**`/names`: surface "About to expire" and "Recently expired"
+sections so operators can see, at a glance, which names lapse soon
+and which just lapsed.**
+
+Namecoin names live for 36,000 blocks (~250 days) after their last
+`name_update` and lapse silently if no further update confirms.
+Until now the only way to find names approaching that boundary was
+to scan namespace-by-namespace via the chain or scrape
+`name_scan` rows by hand. The `/names` page now ships two new
+sections, both populated from the existing 30-min background
+`name_scan` walk (`getNamesSummary`) at zero extra request-path
+cost:
+
+* **About to expire** — active names whose `expires_in` is between
+  1 and `BTCEXP_NAMES_EXPIRING_SOON_BLOCKS` blocks (default 4320
+  ≈ 30 days at 10 min/block). Closest-to-expiring first.
+* **Recently expired** — expired names whose `expires_in` is
+  between `-BTCEXP_NAMES_RECENTLY_EXPIRED_BLOCKS` and 0
+  (default 4320 ≈ 30 days). Most-recently-expired first.
+
+Both lists are capped at 500 entries to bound memory; `Total`
+counts in the section header reflect the true number of matching
+names before the cap. Each row links to `/name/<name>` and to the
+last `name_update` block.
+
+While any expiring/recently-expired names exist in the summary,
+the sections render between the existing "How Namecoin names work"
+lifecycle docs and the "Browse" `name_scan` UI. If the background
+scan is still pending on first boot, a placeholder message points
+at the 30-min refresh interval. If the chain has zero names in
+either bucket, both sections are suppressed (no empty tables).
+
+Files touched:
+  * `app/api/nameApi.js` — `getNamesSummary` now accepts
+    `expiringSoonBlocks`, `recentlyExpiredBlocks`, `expiringListCap`
+    options and returns `expiringSoon[]`, `recentlyExpired[]`,
+    `expiringSoonTotal`, `recentlyExpiredTotal`,
+    `expiringSoonBlocks`, `recentlyExpiredBlocks` fields. Both
+    lists are sorted + capped after the scan finishes; populated
+    inline during the existing `name_scan` walk so no extra RPC.
+  * `app.js` — `refreshNamesSummary` honours
+    `BTCEXP_NAMES_EXPIRING_SOON_BLOCKS` and
+    `BTCEXP_NAMES_RECENTLY_EXPIRED_BLOCKS` env-var overrides; debug
+    log line now includes the two new totals.
+  * `views/names.pug` — two new `+contentSection` blocks render the
+    lists when present, with a pending-scan placeholder when the
+    background walk hasn't completed yet. Both tables share the
+    same 4-column shape (Name / Namespace / Height / Expires-in)
+    and reuse the existing `bg-warning` / `bg-danger` badges.
+
+No schema migration; no new RPC. Background scan stays at one
+`name_scan` walk every 30 min.
+
 ##### nmc-3.6.15
 ###### 2026-05-04
 

@@ -49,6 +49,102 @@ block content
 			<a href="https://github.com/namecoin/namecoin-core/blob/master/doc/namecoin.md" target="_blank" rel="noopener">36,000 blocks (~250 days)</a>
 			the name expires and anyone can re-register it.
 
+	if (namesSummary && namesSummary.expiringSoon && namesSummary.expiringSoon.length)
+		+contentSection("About to expire")
+			p.text-muted.small.mb-3.
+				Active names whose <code>expires_in</code> is
+				&le; <strong>#{namesSummary.expiringSoonBlocks.toLocaleString()}</strong>
+				blocks (~#{Math.round(namesSummary.expiringSoonBlocks / 144)} days at
+				10 min/block).  Sorted by closest-to-expiring first.  If no
+				<code>name_update</code> confirms before <code>expires_in</code>
+				hits 0 the name lapses and anyone can re-register it.
+				Sourced from the background <code>name_scan</code> walk
+				(refreshed every 30 min); the per-name list is capped at
+				<strong>#{namesSummary.expiringListCap.toLocaleString()}</strong>
+				entries
+				if (namesSummary.expiringSoonTotal > namesSummary.expiringSoon.length)
+					|  &mdash; showing the first #{namesSummary.expiringSoon.length.toLocaleString()} of <strong>#{namesSummary.expiringSoonTotal.toLocaleString()}</strong>.
+				else
+					| .
+
+			.table-responsive
+				table.table.table-sm.mb-0
+					thead
+						tr
+							th Name
+							th NS
+							th Height
+							th Expires in
+					tbody
+						each row in namesSummary.expiringSoon
+							- var __slash = row.name ? row.name.indexOf("/") : -1
+							- var __ns = __slash > 0 ? row.name.substring(0, __slash) : null
+							tr
+								td
+									a.font-monospace.small(href=`./name/${encodeURIComponent(row.name)}`)= row.name
+								td
+									if (__ns)
+										span.badge.bg-secondary= __ns
+								td
+									if (row.height)
+										a(href=`./block-height/${row.height}`)= row.height
+								td
+									span.badge.bg-warning.text-dark= `${row.expires_in.toLocaleString()} blocks`
+
+	if (namesSummary && namesSummary.recentlyExpired && namesSummary.recentlyExpired.length)
+		+contentSection("Recently expired")
+			p.text-muted.small.mb-3.
+				Names that have expired within the last
+				<strong>#{namesSummary.recentlyExpiredBlocks.toLocaleString()}</strong>
+				blocks (~#{Math.round(namesSummary.recentlyExpiredBlocks / 144)} days at
+				10 min/block).  Sorted most-recently-expired first.  An expired
+				name can be re-registered by anyone via <code>name_new</code> +
+				<code>name_firstupdate</code>.  Sourced from the background
+				<code>name_scan</code> walk (refreshed every 30 min); the
+				per-name list is capped at
+				<strong>#{namesSummary.expiringListCap.toLocaleString()}</strong>
+				entries
+				if (namesSummary.recentlyExpiredTotal > namesSummary.recentlyExpired.length)
+					|  &mdash; showing the first #{namesSummary.recentlyExpired.length.toLocaleString()} of <strong>#{namesSummary.recentlyExpiredTotal.toLocaleString()}</strong>.
+				else
+					| .
+
+			.table-responsive
+				table.table.table-sm.mb-0
+					thead
+						tr
+							th Name
+							th NS
+							th Height
+							th Expired
+					tbody
+						each row in namesSummary.recentlyExpired
+							- var __slash = row.name ? row.name.indexOf("/") : -1
+							- var __ns = __slash > 0 ? row.name.substring(0, __slash) : null
+							tr
+								td
+									a.font-monospace.small(href=`./name/${encodeURIComponent(row.name)}`)= row.name
+								td
+									if (__ns)
+										span.badge.bg-secondary= __ns
+								td
+									if (row.height)
+										a(href=`./block-height/${row.height}`)= row.height
+								td
+									span.badge.bg-danger= `${Math.abs(row.expires_in).toLocaleString()} blocks ago`
+
+	else if (namesSummary && (namesSummary.expiringSoon || namesSummary.recentlyExpired))
+		// Background scan finished but found no rows in either expiry window;
+		// suppress the sections entirely rather than showing two empty tables.
+
+	else if (namesSummaryPending)
+		+contentSection("About to expire / Recently expired")
+			p.text-muted.small.mb-0.
+				The background <code>name_scan</code> walk hasn't finished yet —
+				the expiring / expired sections will appear here once the first
+				refresh completes (typically within ~30 seconds of explorer
+				boot).
+
 	+contentSection("Browse")
 		p.text-muted.small.mb-3.
 			This browser walks the chain via Namecoin Core's

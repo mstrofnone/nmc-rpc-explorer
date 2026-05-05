@@ -583,12 +583,18 @@ const FILTER_DESCRIPTIONS = {
 //     active:     <int>,           // total - expired
 //     expired:    <int>,
 //     byNamespace: { d: { total, active, expired }, id: {...}, ... },
+//     expiringSoon:        [ { name, expires_in, height }, ... ],   // sorted closest-to-expiring first, capped
+//     recentlyExpired:     [ { name, expires_in, height }, ... ],   // sorted most-recently-expired first, capped
+//     expiringSoonTotal:   <int>,   // true count before capping
+//     recentlyExpiredTotal:<int>,
+//     expiringSoonBlocks:  <int>,   // window threshold (default 4320 ≈ 30 days)
+//     recentlyExpiredBlocks:<int>,  // window threshold (default 4320 ≈ 30 days)
 //     scannedAt:  <ms epoch>,
 //     truncated:  <bool>,           // hit the per-prefix cap
 //     elapsedMs:  <int>,
 //   }
 // ---------------------------------------------------------------------------
-async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefixes = null, filterListCap = 5000, squatterTopN = 10, squatterSampleNames = 5, squatterMinCount = 2, squatterMaxValueLen = 4096 } = {}) {
+async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefixes = null, filterListCap = 5000, squatterTopN = 10, squatterSampleNames = 5, squatterMinCount = 2, squatterMaxValueLen = 4096, expiringSoonBlocks = 4320, recentlyExpiredBlocks = 4320, expiringListCap = 500 } = {}) {
 	const startedAt = Date.now();
 	// Squatter clustering: group names by their EXACT value string. Names
 	// registered in bulk by the same operator (typo-squat farms, parking
@@ -622,6 +628,21 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 		squatterMinCount,
 		squatterUniqueValues: 0,
 		squatterClusteredNames: 0,
+		// Expiry buckets, populated during the scan and sorted/capped at the end.
+		// `expiringSoon` = active names with `expires_in` between 1 and
+		// `expiringSoonBlocks` (closest-to-expiring first). `recentlyExpired` =
+		// expired names whose `expires_in` is between `-recentlyExpiredBlocks`
+		// and 0 (most-recently-expired first). The full per-name lists are
+		// capped at `expiringListCap`; `expiringSoonTotal` /
+		// `recentlyExpiredTotal` track the true counts so the UI can show e.g.
+		// "showing first 500 of 1234".
+		expiringSoon: [],
+		recentlyExpired: [],
+		expiringSoonTotal: 0,
+		recentlyExpiredTotal: 0,
+		expiringSoonBlocks,
+		recentlyExpiredBlocks,
+		expiringListCap,
 		scannedAt: null,
 		truncated: false,
 		pagesScanned: 0,
@@ -689,6 +710,28 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 						bucket.sampleNames.push(row.name);
 					}
 					bucket.byNamespace[ns] = (bucket.byNamespace[ns] || 0) + 1;
+				}
+
+				// Expiry tracking. `expires_in` is in blocks. For active names
+				// it's positive (blocks until expiry); for expired names it's
+				// zero or negative (blocks since expiry). We bucket each row
+				// here and sort/cap after the scan finishes.
+				if (typeof row.expires_in === "number") {
+					if (!row.expired && row.expires_in > 0 && row.expires_in <= expiringSoonBlocks) {
+						summary.expiringSoonTotal++;
+						summary.expiringSoon.push({
+							name: row.name,
+							expires_in: row.expires_in,
+							height: row.height,
+						});
+					} else if (row.expired && row.expires_in <= 0 && row.expires_in >= -recentlyExpiredBlocks) {
+						summary.recentlyExpiredTotal++;
+						summary.recentlyExpired.push({
+							name: row.name,
+							expires_in: row.expires_in,
+							height: row.height,
+						});
+					}
 				}
 
 				// Value-shape classification — only run on active names so the
@@ -785,6 +828,22 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 		.slice()
 		.sort((a, b) => (b.count - a.count) || (b.activeCount - a.activeCount))
 		.slice(0, squatterTopN);
+
+	// Sort + cap the expiry buckets. `expiringSoon` is closest-to-expiring
+	// first (smallest positive `expires_in` first); `recentlyExpired` is
+	// most-recently-expired first (largest `expires_in` first, i.e. closest
+	// to zero — the least negative). Both lists are then truncated to
+	// `expiringListCap` so a chain with millions of expiring names can't blow
+	// up the in-memory summary; the totals stay accurate via the
+	// `*Total` fields.
+	summary.expiringSoon.sort((a, b) => a.expires_in - b.expires_in);
+	if (summary.expiringSoon.length > expiringListCap) {
+		summary.expiringSoon = summary.expiringSoon.slice(0, expiringListCap);
+	}
+	summary.recentlyExpired.sort((a, b) => b.expires_in - a.expires_in);
+	if (summary.recentlyExpired.length > expiringListCap) {
+		summary.recentlyExpired = summary.recentlyExpired.slice(0, expiringListCap);
+	}
 
 	summary.scannedAt = Date.now();
 	summary.elapsedMs = summary.scannedAt - startedAt;
