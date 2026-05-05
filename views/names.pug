@@ -99,8 +99,23 @@ block content
 										code.small= JSON.stringify(row.valueRender.parsed).slice(0, 120)
 									else
 										code.small= (row.valueRender.display || "").slice(0, 120)
+
+			//- Quick-expand links: the form above already lets users type any
+			//- count up to 200, but most landings just want one click to
+			//- widen the window without retyping the start cursor.
+			- var __startQ = nameStart ? `&start=${encodeURIComponent(nameStart)}` : ""
+			.mt-2.small.text-muted
+				| Showing #{nameRows.length} #{nameCount && nameCount !== nameRows.length ? `(of up to ${nameCount} requested)` : ""}.  Show
+				a.ms-1(href=`./names?count=10${__startQ}`) 10
+				| ,
+				a.ms-1(href=`./names?count=50${__startQ}`) 50
+				| ,
+				a.ms-1(href=`./names?count=200${__startQ}`) 200
+				| .
 		else
 			div.text-muted No names returned for this scan window.
+
+	- var __previewCount = 10
 
 	if (namesSummary && namesSummary.expiringSoon && namesSummary.expiringSoon.length)
 		+contentSection("About to expire")
@@ -116,9 +131,12 @@ block content
 				<strong>#{namesSummary.expiringListCap.toLocaleString()}</strong>
 				entries
 				if (namesSummary.expiringSoonTotal > namesSummary.expiringSoon.length)
-					|  &mdash; showing the first #{namesSummary.expiringSoon.length.toLocaleString()} of <strong>#{namesSummary.expiringSoonTotal.toLocaleString()}</strong>.
+					|  &mdash; <strong>#{namesSummary.expiringSoonTotal.toLocaleString()}</strong> in total, listing first #{namesSummary.expiringSoon.length.toLocaleString()}.
 				else
 					| .
+
+			- var __preview = namesSummary.expiringSoon.slice(0, __previewCount)
+			- var __rest = namesSummary.expiringSoon.length > __previewCount ? namesSummary.expiringSoon.slice(__previewCount) : []
 
 			.table-responsive
 				table.table.table-sm.mb-0
@@ -129,7 +147,7 @@ block content
 							th Height
 							th Expires in
 					tbody
-						each row in namesSummary.expiringSoon
+						each row in __preview
 							- var __slash = row.name ? row.name.indexOf("/") : -1
 							- var __ns = __slash > 0 ? row.name.substring(0, __slash) : null
 							tr
@@ -143,6 +161,34 @@ block content
 										a(href=`./block-height/${row.height}`)= row.height
 								td
 									span.badge.bg-warning.text-dark= `${row.expires_in.toLocaleString()} blocks`
+
+			if (__rest.length)
+				details.mt-2
+					summary.small.text-muted(style="cursor:pointer")
+						| Show remaining #{__rest.length.toLocaleString()} (#{namesSummary.expiringSoon.length.toLocaleString()} loaded total)
+					.table-responsive.mt-2
+						table.table.table-sm.mb-0
+							thead
+								tr
+									th Name
+									th NS
+									th Height
+									th Expires in
+							tbody
+								each row in __rest
+									- var __slash = row.name ? row.name.indexOf("/") : -1
+									- var __ns = __slash > 0 ? row.name.substring(0, __slash) : null
+									tr
+										td
+											a.font-monospace.small(href=`./name/${encodeURIComponent(row.name)}`)= row.name
+										td
+											if (__ns)
+												span.badge.bg-secondary= __ns
+										td
+											if (row.height)
+												a(href=`./block-height/${row.height}`)= row.height
+										td
+											span.badge.bg-warning.text-dark= `${row.expires_in.toLocaleString()} blocks`
 
 	if (namesSummary && namesSummary.recentlyExpired && namesSummary.recentlyExpired.length)
 		+contentSection("Recently expired")
@@ -158,9 +204,12 @@ block content
 				<strong>#{namesSummary.expiringListCap.toLocaleString()}</strong>
 				entries
 				if (namesSummary.recentlyExpiredTotal > namesSummary.recentlyExpired.length)
-					|  &mdash; showing the first #{namesSummary.recentlyExpired.length.toLocaleString()} of <strong>#{namesSummary.recentlyExpiredTotal.toLocaleString()}</strong>.
+					|  &mdash; <strong>#{namesSummary.recentlyExpiredTotal.toLocaleString()}</strong> in total, listing first #{namesSummary.recentlyExpired.length.toLocaleString()}.
 				else
 					| .
+
+			- var __previewE = namesSummary.recentlyExpired.slice(0, __previewCount)
+			- var __restE = namesSummary.recentlyExpired.length > __previewCount ? namesSummary.recentlyExpired.slice(__previewCount) : []
 
 			.table-responsive
 				table.table.table-sm.mb-0
@@ -171,7 +220,7 @@ block content
 							th Height
 							th Expired
 					tbody
-						each row in namesSummary.recentlyExpired
+						each row in __previewE
 							- var __slash = row.name ? row.name.indexOf("/") : -1
 							- var __ns = __slash > 0 ? row.name.substring(0, __slash) : null
 							tr
@@ -185,6 +234,34 @@ block content
 										a(href=`./block-height/${row.height}`)= row.height
 								td
 									span.badge.bg-danger= `${Math.abs(row.expires_in).toLocaleString()} blocks ago`
+
+			if (__restE.length)
+				details.mt-2
+					summary.small.text-muted(style="cursor:pointer")
+						| Show remaining #{__restE.length.toLocaleString()} (#{namesSummary.recentlyExpired.length.toLocaleString()} loaded total)
+					.table-responsive.mt-2
+						table.table.table-sm.mb-0
+							thead
+								tr
+									th Name
+									th NS
+									th Height
+									th Expired
+							tbody
+								each row in __restE
+									- var __slash = row.name ? row.name.indexOf("/") : -1
+									- var __ns = __slash > 0 ? row.name.substring(0, __slash) : null
+									tr
+										td
+											a.font-monospace.small(href=`./name/${encodeURIComponent(row.name)}`)= row.name
+										td
+											if (__ns)
+												span.badge.bg-secondary= __ns
+										td
+											if (row.height)
+												a(href=`./block-height/${row.height}`)= row.height
+										td
+											span.badge.bg-danger= `${Math.abs(row.expires_in).toLocaleString()} blocks ago`
 
 	else if (namesSummaryPending && !(namesSummary && namesSummary.expiringSoon && namesSummary.expiringSoon.length))
 		+contentSection("About to expire / Recently expired")

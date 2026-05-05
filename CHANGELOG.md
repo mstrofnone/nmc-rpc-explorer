@@ -1,3 +1,34 @@
+##### nmc-3.6.18
+###### 2026-05-05
+
+**`/names`: collapse all three sections to 10 rows by default with
+a native disclosure widget for the rest.**
+
+Follow-up to nmc-3.6.17. The page was loading clean but the
+expiry tables (~500 capped entries each) plus the default 50-row
+`name_scan` page made the landing view scroll forever. Compacted
+so each section is one screen tall by default, with one click to
+expand:
+
+* **Browse** — default scan count drops from 50 to 10. Three
+  quick-expand links (`Show 10 / 50 / 200`) below the table
+  preserve the start cursor in the query string so users can
+  widen the window without retyping.
+* **About to expire** / **Recently expired** — first 10 rows
+  render in a regular table; the remainder (up to the
+  `expiringListCap`-of-500 cap) is wrapped in a native HTML
+  `<details>` element with `<summary>` reading
+  &ldquo;Show remaining N&rdquo;. No JS, no Bootstrap collapse;
+  the disclosure widget is keyboard-accessible by default and
+  the hidden rows ride along in the same HTML payload (no extra
+  request to expand).
+
+Files touched:
+  * `views/names.pug` — split each expiry section into a preview
+    table + `<details>`-wrapped remainder table; added Browse
+    quick-expand links.
+  * `routes/baseRouter.js` — default `/names?count=` from 50 to 10.
+
 ##### nmc-3.6.17
 ###### 2026-05-05
 

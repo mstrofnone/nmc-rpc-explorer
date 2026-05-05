@@ -2785,7 +2785,10 @@ router.get("/names/filter/:filter", asyncHandler(async (req, res, next) => {
 router.get("/names", asyncHandler(async (req, res, next) => {
 	try {
 		const start = req.query.start || "";
-		const count = Math.min(parseInt(req.query.count || "50", 10) || 50, 200);
+		// Default to 10 rows (compact landing view); users click the quick-
+		// expand links below the table or type a higher number in the form
+		// to fetch up to 200 at a time.
+		const count = Math.min(parseInt(req.query.count || "10", 10) || 10, 200);
 
 		const rows = await nameApi.nameScan(start, count);
 
