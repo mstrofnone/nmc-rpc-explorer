@@ -1,3 +1,40 @@
+##### nmc-3.6.23
+###### 2026-05-06
+
+**`/names` — new "Oldest Active Names" section at the bottom of the page.**
+
+Answers "which names registered longest ago are still active right
+now?" — a question `name_scan` cannot answer alone, since `name_scan`
+only returns each name's LAST update height, not its original
+`name_firstupdate` height. Those two heights are unrelated for any
+name that has ever been renewed; the only way to know a name's true
+registration block is to look at its `name_firstupdate` op directly.
+
+New API: `nameApi.getOldestActiveNames({ windowBlocks, listCap,
+perBlockCap, coreApi })` walks the last `windowBlocks` blocks of the
+chain (default ~52,560 = 1 year at 144 blocks/day), collects every
+`name_firstupdate` op, and for each candidate calls `name_show` with
+`allowExpired: false` to filter down to the still-active set. Results
+sort ascending by registration height so the OLDEST surviving names
+bubble to the top. Block fetches reuse the existing 15-min
+`coreApi.blockCache`, so the steady-state cost after the first refresh
+is just the new-tip blocks plus a `name_show` per candidate.
+
+Background task: `refreshOldestActiveNames()` runs at boot and on a
+60-min cadence (looser than the 30-min `refreshRecentFirstUpdates`
+because of the per-candidate `name_show` cost). Same
+`BTCEXP_DISABLE_NAMES_SUMMARY=true` kill switch as the other name
+background tasks; tunable via `BTCEXP_NAMES_OLDEST_LOOKBACK_BLOCKS`
+and `BTCEXP_NAMES_OLDEST_LIST_CAP`.
+
+The new section renders below "New Names" and uses the same table
+shape (Name, NS, Registered, Age, Expires-in, Value preview). Empty
+and pending states are covered the same way as the other expiring/
+recently-expired/new sections (placeholder copy + 60-min refresh
+hint when the background walk is still in flight).
+
+---
+
 ##### nmc-3.6.22
 ###### 2026-05-06
 

@@ -1129,6 +1129,153 @@ async function getRecentNameFirstUpdates({ windowBlocks = 2016, listCap = 500, p
 	};
 }
 
+// ---------------------------------------------------------------------------
+// getOldestActiveNames({ windowBlocks, listCap, perBlockCap, coreApi })
+//
+// Companion to `getRecentNameFirstUpdates`, but answers the OPPOSITE question:
+// "which names registered longest ago are still active right now?". This is
+// the canonical "longest-established names" view that pure `name_scan` cannot
+// answer (it only returns the LAST update height, not the original
+// `name_firstupdate` height — those two are unrelated for any name that has
+// ever been renewed). The only way to know a name's true registration block
+// is to look at its `name_firstupdate` op directly.
+//
+// Strategy: walk the last `windowBlocks` blocks of the chain (default ~1 year
+// at 144 blocks/day = 52,560), collect every `name_firstupdate` op, and for
+// each candidate hit `nameShow` to filter down to ones that are still active
+// (not expired). Sort ascending by firstupdate height so the OLDEST surviving
+// registrations bubble to the top.
+//
+// Costs:
+//   - One `getblock <hash> 2` per block (cached 15min via coreApi.blockCache).
+//     Steady-state after the first refresh: only the new-tip blocks pay.
+//   - One `name_show` per firstupdate candidate. NMC's `name_firstupdate`
+//     density is single-digits per day, so even a 1-year window is in the
+//     low thousands. Each `name_show` is O(1) on the namecoind name index.
+//
+// This is materially more expensive than the 30-min `getRecentNameFirstUpdates`
+// (whose default window is 2,016 blocks ~ 2 weeks), so it should run on a
+// looser refresh cadence (default 60 min in app.js) and behind the same
+// `BTCEXP_DISABLE_NAMES_SUMMARY` kill switch.
+//
+// Returns:
+//   {
+//     items: [
+//       { name, value, value_encoding, height, txid, vout, blocktime,
+//         expires_in, address },   // sorted ASC by height (oldest first)
+//       ...
+//     ],   // length capped at listCap
+//     totalCandidates: <int>,    // firstupdates seen in the window
+//     totalActive:     <int>,    // candidates that survived the active filter
+//     windowBlocks:    <int>,
+//     fromHeight:      <int>,
+//     toHeight:        <int>,
+//     scannedAt:       <ms epoch>,
+//     elapsedMs:       <int>,
+//     truncated:       <bool>,   // listCap < totalActive
+//   }
+// ---------------------------------------------------------------------------
+async function getOldestActiveNames({ windowBlocks = 52560, listCap = 50, perBlockCap = 5000, coreApi = null } = {}) {
+	// Lazy-require coreApi to dodge the circular import (same reason as
+	// getRecentNameFirstUpdates above).
+	const _coreApi = coreApi || require("./coreApi");
+	const startedAt = Date.now();
+	const tip = await _coreApi.getBlockchainInfo();
+	const toHeight = tip && typeof tip.blocks === "number" ? tip.blocks : null;
+	if (toHeight === null) {
+		return { items: [], totalCandidates: 0, totalActive: 0, windowBlocks, fromHeight: null, toHeight: null, scannedAt: Date.now(), elapsedMs: Date.now() - startedAt, truncated: false };
+	}
+	const fromHeight = Math.max(0, toHeight - windowBlocks + 1);
+
+	// Phase 1 — collect ALL firstupdate ops in the window, OLDEST FIRST so
+	// the active-filter loop in phase 2 can short-circuit as soon as listCap
+	// is reached. (`getRecentNameFirstUpdates` walks newest-first; here we
+	// deliberately go the other way.)
+	const candidates = [];
+	let totalCandidates = 0;
+	for (let h = fromHeight; h <= toHeight; h++) {
+		let block;
+		try {
+			block = await _coreApi.getBlockByHeight(h);
+		} catch (_e) {
+			continue;
+		}
+		if (!block || !Array.isArray(block.tx)) continue;
+		let perBlock = 0;
+		for (const tx of block.tx) {
+			if (!tx || !Array.isArray(tx.vout)) continue;
+			for (let vi = 0; vi < tx.vout.length; vi++) {
+				const out = tx.vout[vi];
+				const nameOp = out && out.scriptPubKey && out.scriptPubKey.nameOp;
+				if (!nameOp || nameOp.op !== "name_firstupdate") continue;
+				if (perBlock >= perBlockCap) break;
+				perBlock++;
+				totalCandidates++;
+				candidates.push({
+					name: nameOp.name || null,
+					name_encoding: nameOp.name_encoding || null,
+					value_at_firstupdate: nameOp.value || null,
+					value_encoding_at_firstupdate: nameOp.value_encoding || null,
+					height: block.height,
+					txid: tx.txid,
+					vout: vi,
+					blocktime: block.time || block.mediantime || null,
+				});
+			}
+		}
+	}
+
+	// Phase 2 — active filter. For each candidate (oldest first) call
+	// name_show with allowExpired=false. namecoind returns -4 "name expired"
+	// for expired names AND "name never existed" if a reorg dropped the
+	// firstupdate; both look like rejections here. We swallow rejections and
+	// keep only resolved (= active) names. We also stop once we've collected
+	// listCap actives, so even very long windows don't blow up name_show
+	// load when the listCap is small.
+	const items = [];
+	let totalActive = 0;
+	for (const cand of candidates) {
+		if (!cand.name) continue;
+		let info;
+		try {
+			info = await nameShow(cand.name, { allowExpired: false });
+		} catch (_e) {
+			continue;   // expired, never-existed, or RPC blip — skip
+		}
+		if (!info || info.expired) continue;
+		totalActive++;
+		if (items.length < listCap) {
+			items.push({
+				name: cand.name,
+				name_encoding: cand.name_encoding,
+				// CURRENT value (post any updates) — more useful than the
+				// firstupdate-time value for a "these names still exist" view.
+				value: info.value != null ? info.value : null,
+				value_encoding: info.value_encoding != null ? info.value_encoding : null,
+				height: cand.height,            // firstupdate height (the answer)
+				last_update_height: typeof info.height === "number" ? info.height : null,
+				txid: cand.txid,
+				vout: cand.vout,
+				blocktime: cand.blocktime,
+				expires_in: typeof info.expires_in === "number" ? info.expires_in : null,
+				address: info.address || null,
+			});
+		}
+	}
+
+	return {
+		items,
+		totalCandidates,
+		totalActive,
+		windowBlocks,
+		fromHeight,
+		toHeight,
+		scannedAt: Date.now(),
+		elapsedMs: Date.now() - startedAt,
+		truncated: totalActive > items.length,
+	};
+}
+
 module.exports = {
 	nameShow,
 	nameHistory,
@@ -1138,6 +1285,7 @@ module.exports = {
 	renderNameValue,
 	splitNamespace,
 	getRecentNameFirstUpdates,
+	getOldestActiveNames,
 	reconstructNameHistory,
 	namespaceLabel,
 	parseImports,

@@ -2845,6 +2845,12 @@ router.get("/names", asyncHandler(async (req, res, next) => {
 				namespace: nameApi.splitNamespace(entry.name || "").namespace,
 			}));
 		}
+		if (global.oldestActiveNames && Array.isArray(global.oldestActiveNames.items)) {
+			res.locals.oldestActiveNamesDecorated = global.oldestActiveNames.items.map((entry) => Object.assign({}, entry, {
+				valueRender: nameApi.renderNameValue(entry.value, entry.value_encoding),
+				namespace: nameApi.splitNamespace(entry.name || "").namespace,
+			}));
+		}
 
 		res.render("names");
 	} catch (err) {

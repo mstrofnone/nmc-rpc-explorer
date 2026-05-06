@@ -662,6 +662,15 @@ async function onRpcConnectionVerified(getnetworkinfo, getblockchaininfo) {
 	refreshRecentFirstUpdates();
 	setInterval(refreshRecentFirstUpdates, 30 * 60 * 1000);
 
+	// Namecoin: walk a much wider lookback window (default ~1 year), collect
+	// every `name_firstupdate` op, and check each one against `name_show` to
+	// keep only those still active. Result feeds the /names "Oldest Active
+	// Names" section. Materially more expensive than the 30-min refreshes
+	// (one `name_show` per candidate firstupdate), so it runs on a 60-min
+	// cadence and is gated behind the same disable flag.
+	refreshOldestActiveNames();
+	setInterval(refreshOldestActiveNames, 60 * 60 * 1000);
+
 	// Namecoin: walk the last ~24h of blocks and count which transactions
 	// carry name operations vs which are pure currency txs. Same off-the-
 	// request-path pattern; the tx-stats page reads from the cached value.
@@ -920,6 +929,34 @@ async function refreshRecentFirstUpdates() {
 		global.recentFirstUpdates = null;
 	} finally {
 		global.recentFirstUpdatesPending = false;
+	}
+}
+
+async function refreshOldestActiveNames() {
+	// Same env-var escape hatch as refreshNamesSummary / refreshRecentFirstUpdates.
+	if (process.env.BTCEXP_DISABLE_NAMES_SUMMARY === "true") {
+		debugLog("refreshOldestActiveNames disabled via BTCEXP_DISABLE_NAMES_SUMMARY env var");
+		global.oldestActiveNames = null;
+		return;
+	}
+	global.oldestActiveNamesPending = true;
+	try {
+		// Defaults: 1 year lookback (~52,560 blocks at 10 min/block) and
+		// listCap=50. Both are env-overridable.
+		//   BTCEXP_NAMES_OLDEST_LOOKBACK_BLOCKS  — how far back to search for firstupdates
+		//   BTCEXP_NAMES_OLDEST_LIST_CAP         — how many oldest-still-active to keep
+		const opts = {};
+		const win = parseInt(process.env.BTCEXP_NAMES_OLDEST_LOOKBACK_BLOCKS, 10);
+		if (Number.isFinite(win) && win > 0) opts.windowBlocks = win;
+		const cap = parseInt(process.env.BTCEXP_NAMES_OLDEST_LIST_CAP, 10);
+		if (Number.isFinite(cap) && cap > 0) opts.listCap = cap;
+		global.oldestActiveNames = await nameApi.getOldestActiveNames(opts);
+		debugLog(`Refreshed oldest active names: candidates=${global.oldestActiveNames.totalCandidates} active=${global.oldestActiveNames.totalActive} listed=${global.oldestActiveNames.items.length} window=${global.oldestActiveNames.windowBlocks} elapsedMs=${global.oldestActiveNames.elapsedMs}`);
+	} catch (e) {
+		debugLog("refreshOldestActiveNames error: " + e.message);
+		global.oldestActiveNames = null;
+	} finally {
+		global.oldestActiveNamesPending = false;
 	}
 }
 

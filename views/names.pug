@@ -411,3 +411,83 @@ block content
 				The background block walk for new <code>name_firstupdate</code>
 				ops hasn't finished yet &mdash; this section will appear here once
 				the first refresh completes.
+
+	//- Oldest Active Names: every `name_firstupdate` op confirmed in the last
+	//- ~52,560 blocks (~1 year), filtered down to ones that are still active
+	//- (not expired) and sorted ASCENDING by registration height. This is the
+	//- canonical answer to "longest-established names that still exist" —
+	//- impossible to compute from name_scan alone, since name_scan only knows
+	//- the LAST update height, not the original firstupdate. Window threshold
+	//- is overridable via BTCEXP_NAMES_OLDEST_LOOKBACK_BLOCKS.
+	- var __oldestAA = oldestActiveNamesDecorated || (oldestActiveNames && oldestActiveNames.items) || []
+	if (oldestActiveNames && __oldestAA.length)
+		+contentSection("Oldest Active Names")
+			p.text-muted.small.mb-3.
+				Names registered (via <code>name_firstupdate</code>) within the last
+				<strong>#{oldestActiveNames.windowBlocks.toLocaleString()}</strong>
+				blocks (~#{Math.round(oldestActiveNames.windowBlocks / 144).toLocaleString()} days at
+				10 min/block) that are <em>still active</em> right now.  Sorted oldest
+				registration first.  Sourced from a background block walk over heights
+				<a href=`./block-height/${oldestActiveNames.fromHeight}`>#{oldestActiveNames.fromHeight.toLocaleString()}</a>
+				&ndash;
+				<a href=`./block-height/${oldestActiveNames.toHeight}`>#{oldestActiveNames.toHeight.toLocaleString()}</a>
+				followed by a per-name <code>name_show</code> active-filter (refreshed every 60 min); the
+				per-name list is capped at
+				<strong>#{__oldestAA.length.toLocaleString()}</strong>
+				entries
+				if (oldestActiveNames.totalActive > __oldestAA.length)
+					|  &mdash; <strong>#{oldestActiveNames.totalActive.toLocaleString()}</strong> still-active in total over <strong>#{oldestActiveNames.totalCandidates.toLocaleString()}</strong> firstupdates seen, listing oldest #{__oldestAA.length.toLocaleString()}.
+				else
+					|  &mdash; <strong>#{oldestActiveNames.totalActive.toLocaleString()}</strong> still-active out of <strong>#{oldestActiveNames.totalCandidates.toLocaleString()}</strong> firstupdates in window.
+
+			.table-responsive
+				table.table.table-sm.mb-0
+					thead
+						tr
+							th Name
+							th NS
+							th Registered
+							th Age
+							th Expires in
+							th Value (preview)
+					tbody
+						each row in __oldestAA
+							- var __ns = row.namespace || null
+							- var __blocksAgo = oldestActiveNames.toHeight - row.height
+							- var __daysAgo = Math.round(__blocksAgo / 144)
+							tr
+								td
+									if (row.name)
+										a.font-monospace.small(href=utils.nameUrl(row.name))= row.name
+								td
+									if (__ns)
+										span.badge.bg-secondary= __ns
+								td
+									if (row.height)
+										a(href=`./block-height/${row.height}`)= row.height
+								td
+									span.badge.bg-info.text-dark(title=`${__blocksAgo.toLocaleString()} blocks`)= `~${__daysAgo.toLocaleString()} days`
+								td
+									if (typeof row.expires_in === "number")
+										span.small= `${row.expires_in.toLocaleString()} blocks`
+								td.text-truncate(style="max-width:30rem")
+									if (row.valueRender && row.valueRender.kind === "json")
+										code.small= JSON.stringify(row.valueRender.parsed).slice(0, 120)
+									else if (row.valueRender)
+										code.small= (row.valueRender.display || "").slice(0, 120)
+	else if (oldestActiveNames && oldestActiveNames.totalActive === 0)
+		+contentSection("Oldest Active Names")
+			p.text-muted.small.mb-0.
+				No <code>name_firstupdate</code> ops in the last
+				<strong>#{oldestActiveNames.windowBlocks.toLocaleString()}</strong>
+				blocks survived the active-name filter — either the window is
+				too short, or every name registered in the window has since
+				expired.  Bump <code>BTCEXP_NAMES_OLDEST_LOOKBACK_BLOCKS</code>
+				to widen the search.
+	else if (oldestActiveNamesPending)
+		+contentSection("Oldest Active Names")
+			p.text-muted.small.mb-0.
+				The background block walk + active-filter for oldest still-active
+				names hasn't finished yet &mdash; this section will appear here
+				once the first refresh completes (60-min cadence).
+
