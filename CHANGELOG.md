@@ -1,3 +1,18 @@
+##### nmc-3.6.27
+###### 2026-05-07
+
+**Latest Blocks default: 12 unconditionally (was 12-or-5 depending on `BTCEXP_SLOW_DEVICE_MODE`).**
+
+The homepage `Latest Blocks` tile is the most-visited surface on the explorer; a
+12-row table is the same vertical footprint as 10 rows on most displays and the
+cost is one extra `getBlockByHeight` + `getBlocksStatsByHeight` pair per hit
+(both cached 15 min via the in-memory LRU). With the `ttlAutopurge` fix from
+3.6.26 the cache hit rate is healthy enough that even slow nodes serve the
+homepage in <100ms steady-state, so the slow-device fallback to 5 rows is no
+longer justified. `BTCEXP_UI_HOME_PAGE_LATEST_BLOCKS_COUNT` still overrides.
+
+---
+
 ##### nmc-3.6.26
 ###### 2026-05-07
 

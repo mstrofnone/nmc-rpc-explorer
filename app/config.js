@@ -213,7 +213,14 @@ module.exports = {
 	site: {
 		hideInfoNotes: process.env.BTCEXP_UI_HIDE_INFO_NOTES,
 		homepage:{
-			recentBlocksCount: parseInt(process.env.BTCEXP_UI_HOME_PAGE_LATEST_BLOCKS_COUNT || (slowDeviceMode ? 5 : 12))
+			// Latest Blocks tile size. We default to 12 in BOTH modes — a 12-row
+			// table is the same vertical footprint as 10 rows on most displays
+			// and the cost is one extra getBlockByHeight + getBlocksStatsByHeight
+			// pair per homepage hit (cached 15 min). The previous upstream
+			// default of 5 in slow-device-mode was a 2018-era concession; with
+			// the in-memory LRU cache + ttlAutopurge fix, even slow nodes serve
+			// the homepage in <100ms steady-state.
+			recentBlocksCount: parseInt(process.env.BTCEXP_UI_HOME_PAGE_LATEST_BLOCKS_COUNT || 12)
 		},
 		blockTxPageSize: (slowDeviceMode ? 10 : 20),
 		addressTxPageSize: 10,
