@@ -941,17 +941,25 @@ async function refreshOldestActiveNames() {
 	}
 	global.oldestActiveNamesPending = true;
 	try {
-		// Defaults: 1 year lookback (~52,560 blocks at 10 min/block) and
-		// listCap=50. Both are env-overridable.
-		//   BTCEXP_NAMES_OLDEST_LOOKBACK_BLOCKS  — how far back to search for firstupdates
+		// Defaults: scan the entire chain from genesis (windowBlocks=null) with
+		// listCap=50. The function early-exits as soon as listCap actives are
+		// confirmed (oldest-first), so the typical refresh cost is bounded by
+		// listCap regardless of chain height. All knobs env-overridable:
+		//   BTCEXP_NAMES_OLDEST_LOOKBACK_BLOCKS  — limit search to last N blocks (legacy)
+		//   BTCEXP_NAMES_OLDEST_FROM_HEIGHT      — explicit start height (overrides lookback)
 		//   BTCEXP_NAMES_OLDEST_LIST_CAP         — how many oldest-still-active to keep
+		//   BTCEXP_NAMES_OLDEST_BATCH_SIZE       — parallel block fetches per batch
 		const opts = {};
 		const win = parseInt(process.env.BTCEXP_NAMES_OLDEST_LOOKBACK_BLOCKS, 10);
 		if (Number.isFinite(win) && win > 0) opts.windowBlocks = win;
+		const from = parseInt(process.env.BTCEXP_NAMES_OLDEST_FROM_HEIGHT, 10);
+		if (Number.isFinite(from) && from >= 0) opts.fromHeight = from;
 		const cap = parseInt(process.env.BTCEXP_NAMES_OLDEST_LIST_CAP, 10);
 		if (Number.isFinite(cap) && cap > 0) opts.listCap = cap;
+		const batch = parseInt(process.env.BTCEXP_NAMES_OLDEST_BATCH_SIZE, 10);
+		if (Number.isFinite(batch) && batch > 0) opts.batchSize = batch;
 		global.oldestActiveNames = await nameApi.getOldestActiveNames(opts);
-		debugLog(`Refreshed oldest active names: candidates=${global.oldestActiveNames.totalCandidates} active=${global.oldestActiveNames.totalActive} listed=${global.oldestActiveNames.items.length} window=${global.oldestActiveNames.windowBlocks} elapsedMs=${global.oldestActiveNames.elapsedMs}`);
+		debugLog(`Refreshed oldest active names: candidates=${global.oldestActiveNames.totalCandidates} active=${global.oldestActiveNames.totalActive} listed=${global.oldestActiveNames.items.length} fromHeight=${global.oldestActiveNames.fromHeight} toHeight=${global.oldestActiveNames.toHeight} earlyExit=${global.oldestActiveNames.earlyExit} elapsedMs=${global.oldestActiveNames.elapsedMs}`);
 	} catch (e) {
 		debugLog("refreshOldestActiveNames error: " + e.message);
 		global.oldestActiveNames = null;

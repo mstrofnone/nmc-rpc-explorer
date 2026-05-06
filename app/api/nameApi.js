@@ -1130,7 +1130,7 @@ async function getRecentNameFirstUpdates({ windowBlocks = 2016, listCap = 500, p
 }
 
 // ---------------------------------------------------------------------------
-// getOldestActiveNames({ windowBlocks, listCap, perBlockCap, coreApi })
+// getOldestActiveNames({ windowBlocks, fromHeight, listCap, perBlockCap, batchSize, coreApi })
 //
 // Companion to `getRecentNameFirstUpdates`, but answers the OPPOSITE question:
 // "which names registered longest ago are still active right now?". This is
@@ -1140,23 +1140,36 @@ async function getRecentNameFirstUpdates({ windowBlocks = 2016, listCap = 500, p
 // ever been renewed). The only way to know a name's true registration block
 // is to look at its `name_firstupdate` op directly.
 //
-// Strategy: walk the last `windowBlocks` blocks of the chain (default ~1 year
-// at 144 blocks/day = 52,560), collect every `name_firstupdate` op, and for
-// each candidate hit `nameShow` to filter down to ones that are still active
-// (not expired). Sort ascending by firstupdate height so the OLDEST surviving
-// registrations bubble to the top.
+// Strategy: walk blocks oldest-first, collect every `name_firstupdate` op,
+// and (interleaved per batch) hit `nameShow` to filter down to ones that
+// are still active (not expired). Sorted ascending by firstupdate height so
+// the OLDEST surviving registrations bubble to the top, and we EARLY-EXIT
+// the whole walk as soon as we have `listCap` confirmed-active names —
+// since we're already walking oldest-first, the first listCap actives we
+// find ARE the oldest in the chain.
 //
-// Costs:
-//   - One `getblock <hash> 2` per block (cached 15min via coreApi.blockCache).
-//     Steady-state after the first refresh: only the new-tip blocks pay.
-//   - One `name_show` per firstupdate candidate. NMC's `name_firstupdate`
-//     density is single-digits per day, so even a 1-year window is in the
-//     low thousands. Each `name_show` is O(1) on the namecoind name index.
+// Defaults:
+//   windowBlocks: null  → scan the entire chain from genesis to tip.
+//                       Pass a positive integer to limit the walk to the
+//                       last N blocks (the legacy "last 1 year" behaviour).
+//   fromHeight:   null  → starts at max(0, tip - windowBlocks + 1) when
+//                       windowBlocks is set, or 0 otherwise. Pass an explicit
+//                       integer to override (useful for ops who want to skip
+//                       the very early chain on a fresh node).
+//   listCap:      50    → max items returned. Phase 2 stops calling name_show
+//                       once we've confirmed this many actives.
+//   batchSize:    64    → blocks fetched in parallel per batch via
+//                       getBlocksByHeight. Block fetches hit the 15-min
+//                       coreApi blockCache on subsequent refreshes so the
+//                       steady-state cost is dominated by new-tip blocks.
 //
-// This is materially more expensive than the 30-min `getRecentNameFirstUpdates`
-// (whose default window is 2,016 blocks ~ 2 weeks), so it should run on a
-// looser refresh cadence (default 60 min in app.js) and behind the same
-// `BTCEXP_DISABLE_NAMES_SUMMARY` kill switch.
+// Costs (cold first run, scanning the whole NMC chain):
+//   - O(tipHeight) `getblock <hash> 2` calls, batched 64 at a time, all
+//     served from cache on subsequent refreshes.
+//   - At most `listCap` name_show calls in the common case (early exit).
+//     If the listCap is set higher than the number of still-active names
+//     ever registered we walk the whole chain and call name_show once per
+//     candidate; that's the legacy upper bound.
 //
 // Returns:
 //   {
@@ -1165,17 +1178,18 @@ async function getRecentNameFirstUpdates({ windowBlocks = 2016, listCap = 500, p
 //         expires_in, address },   // sorted ASC by height (oldest first)
 //       ...
 //     ],   // length capped at listCap
-//     totalCandidates: <int>,    // firstupdates seen in the window
-//     totalActive:     <int>,    // candidates that survived the active filter
-//     windowBlocks:    <int>,
+//     totalCandidates: <int>,        // firstupdates seen in the scan range
+//     totalActive:     <int|null>,   // active count, or null when we early-exited
+//     windowBlocks:    <int|null>,   // null when scanning entire chain from genesis
 //     fromHeight:      <int>,
 //     toHeight:        <int>,
 //     scannedAt:       <ms epoch>,
 //     elapsedMs:       <int>,
-//     truncated:       <bool>,   // listCap < totalActive
+//     truncated:       <bool>,       // listCap < totalActive (or early-exit)
+//     earlyExit:       <bool>,       // stopped scan once listCap actives found
 //   }
 // ---------------------------------------------------------------------------
-async function getOldestActiveNames({ windowBlocks = 52560, listCap = 50, perBlockCap = 5000, coreApi = null } = {}) {
+async function getOldestActiveNames({ windowBlocks = null, fromHeight: fromHeightOpt = null, listCap = 50, perBlockCap = 5000, batchSize = 64, coreApi = null } = {}) {
 	// Lazy-require coreApi to dodge the circular import (same reason as
 	// getRecentNameFirstUpdates above).
 	const _coreApi = coreApi || require("./coreApi");
@@ -1183,96 +1197,121 @@ async function getOldestActiveNames({ windowBlocks = 52560, listCap = 50, perBlo
 	const tip = await _coreApi.getBlockchainInfo();
 	const toHeight = tip && typeof tip.blocks === "number" ? tip.blocks : null;
 	if (toHeight === null) {
-		return { items: [], totalCandidates: 0, totalActive: 0, windowBlocks, fromHeight: null, toHeight: null, scannedAt: Date.now(), elapsedMs: Date.now() - startedAt, truncated: false };
+		return { items: [], totalCandidates: 0, totalActive: 0, windowBlocks, fromHeight: null, toHeight: null, scannedAt: Date.now(), elapsedMs: Date.now() - startedAt, truncated: false, earlyExit: false };
 	}
-	const fromHeight = Math.max(0, toHeight - windowBlocks + 1);
 
-	// Phase 1 — collect ALL firstupdate ops in the window, OLDEST FIRST so
-	// the active-filter loop in phase 2 can short-circuit as soon as listCap
-	// is reached. (`getRecentNameFirstUpdates` walks newest-first; here we
-	// deliberately go the other way.)
-	const candidates = [];
+	// Resolve scan start height. Priority:
+	//   1. explicit fromHeightOpt (env-var override path),
+	//   2. windowBlocks-based clamp (legacy "last N blocks" behaviour),
+	//   3. genesis (when both null) — the new default, scans entire chain.
+	let fromHeight;
+	if (Number.isFinite(fromHeightOpt) && fromHeightOpt >= 0) {
+		fromHeight = Math.min(fromHeightOpt, toHeight);
+	} else if (Number.isFinite(windowBlocks) && windowBlocks > 0) {
+		fromHeight = Math.max(0, toHeight - windowBlocks + 1);
+	} else {
+		fromHeight = 0;
+	}
+
+	// Interleaved phase1+phase2 walk. Process blocks in batches of
+	// `batchSize` (parallel `getblock` via coreApi.getBlocksByHeight) so we
+	// get parallel cache fills on the cold first run. After every batch we
+	// drain the candidates accumulated in that batch through name_show; as
+	// soon as `items` reaches `listCap` we early-exit the entire walk.
+	const items = [];
 	let totalCandidates = 0;
-	for (let h = fromHeight; h <= toHeight; h++) {
-		let block;
+	let totalActive = 0;
+	let earlyExit = false;
+
+	outer: for (let h0 = fromHeight; h0 <= toHeight; h0 += batchSize) {
+		const h1 = Math.min(h0 + batchSize - 1, toHeight);
+		const heights = [];
+		for (let h = h0; h <= h1; h++) heights.push(h);
+		let batchBlocks;
 		try {
-			block = await _coreApi.getBlockByHeight(h);
+			batchBlocks = await _coreApi.getBlocksByHeight(heights);
 		} catch (_e) {
 			continue;
 		}
-		if (!block || !Array.isArray(block.tx)) continue;
-		let perBlock = 0;
-		for (const tx of block.tx) {
-			if (!tx || !Array.isArray(tx.vout)) continue;
-			for (let vi = 0; vi < tx.vout.length; vi++) {
-				const out = tx.vout[vi];
-				const nameOp = out && out.scriptPubKey && out.scriptPubKey.nameOp;
-				if (!nameOp || nameOp.op !== "name_firstupdate") continue;
-				if (perBlock >= perBlockCap) break;
-				perBlock++;
-				totalCandidates++;
-				candidates.push({
-					name: nameOp.name || null,
-					name_encoding: nameOp.name_encoding || null,
-					value_at_firstupdate: nameOp.value || null,
-					value_encoding_at_firstupdate: nameOp.value_encoding || null,
-					height: block.height,
-					txid: tx.txid,
-					vout: vi,
-					blocktime: block.time || block.mediantime || null,
-				});
+
+		// Collect candidates in this batch (oldest-first within the batch).
+		const batchCandidates = [];
+		for (const block of batchBlocks) {
+			if (!block || !Array.isArray(block.tx)) continue;
+			let perBlock = 0;
+			for (const tx of block.tx) {
+				if (!tx || !Array.isArray(tx.vout)) continue;
+				for (let vi = 0; vi < tx.vout.length; vi++) {
+					const out = tx.vout[vi];
+					const nameOp = out && out.scriptPubKey && out.scriptPubKey.nameOp;
+					if (!nameOp || nameOp.op !== "name_firstupdate") continue;
+					if (perBlock >= perBlockCap) break;
+					perBlock++;
+					totalCandidates++;
+					batchCandidates.push({
+						name: nameOp.name || null,
+						name_encoding: nameOp.name_encoding || null,
+						value_at_firstupdate: nameOp.value || null,
+						value_encoding_at_firstupdate: nameOp.value_encoding || null,
+						height: block.height,
+						txid: tx.txid,
+						vout: vi,
+						blocktime: block.time || block.mediantime || null,
+					});
+				}
 			}
 		}
-	}
 
-	// Phase 2 — active filter. For each candidate (oldest first) call
-	// name_show with allowExpired=false. namecoind returns -4 "name expired"
-	// for expired names AND "name never existed" if a reorg dropped the
-	// firstupdate; both look like rejections here. We swallow rejections and
-	// keep only resolved (= active) names. We also stop once we've collected
-	// listCap actives, so even very long windows don't blow up name_show
-	// load when the listCap is small.
-	const items = [];
-	let totalActive = 0;
-	for (const cand of candidates) {
-		if (!cand.name) continue;
-		let info;
-		try {
-			info = await nameShow(cand.name, { allowExpired: false });
-		} catch (_e) {
-			continue;   // expired, never-existed, or RPC blip — skip
-		}
-		if (!info || info.expired) continue;
-		totalActive++;
-		if (items.length < listCap) {
-			items.push({
-				name: cand.name,
-				name_encoding: cand.name_encoding,
-				// CURRENT value (post any updates) — more useful than the
-				// firstupdate-time value for a "these names still exist" view.
-				value: info.value != null ? info.value : null,
-				value_encoding: info.value_encoding != null ? info.value_encoding : null,
-				height: cand.height,            // firstupdate height (the answer)
-				last_update_height: typeof info.height === "number" ? info.height : null,
-				txid: cand.txid,
-				vout: cand.vout,
-				blocktime: cand.blocktime,
-				expires_in: typeof info.expires_in === "number" ? info.expires_in : null,
-				address: info.address || null,
-			});
+		// Drain this batch's candidates oldest-first via name_show. Stop the
+		// whole outer walk as soon as items hits listCap.
+		for (const cand of batchCandidates) {
+			if (!cand.name) continue;
+			let info;
+			try {
+				info = await nameShow(cand.name, { allowExpired: false });
+			} catch (_e) {
+				continue;   // expired, never-existed, or RPC blip — skip
+			}
+			if (!info || info.expired) continue;
+			totalActive++;
+			if (items.length < listCap) {
+				items.push({
+					name: cand.name,
+					name_encoding: cand.name_encoding,
+					// CURRENT value (post any updates) — more useful than the
+					// firstupdate-time value for a "these names still exist" view.
+					value: info.value != null ? info.value : null,
+					value_encoding: info.value_encoding != null ? info.value_encoding : null,
+					height: cand.height,            // firstupdate height (the answer)
+					last_update_height: typeof info.height === "number" ? info.height : null,
+					txid: cand.txid,
+					vout: cand.vout,
+					blocktime: cand.blocktime,
+					expires_in: typeof info.expires_in === "number" ? info.expires_in : null,
+					address: info.address || null,
+				});
+				if (items.length >= listCap) {
+					earlyExit = true;
+					break outer;
+				}
+			}
 		}
 	}
 
 	return {
 		items,
 		totalCandidates,
-		totalActive,
+		// When we early-exited we did not enumerate all actives, so the
+		// total active count from THIS scan is unknown. Surface as null so
+		// the UI can fall back to namesSummary.active or hide the count.
+		totalActive: earlyExit ? null : totalActive,
 		windowBlocks,
 		fromHeight,
 		toHeight,
 		scannedAt: Date.now(),
 		elapsedMs: Date.now() - startedAt,
-		truncated: totalActive > items.length,
+		truncated: earlyExit || totalActive > items.length,
+		earlyExit,
 	};
 }
 

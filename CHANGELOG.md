@@ -1,3 +1,33 @@
+##### nmc-3.6.25
+###### 2026-05-07
+
+**Three homepage / `/names` polishes:**
+
+* `/names` *Oldest Active Names* now scans the entire chain (genesis → tip)
+  by default instead of a 1-year window. Walk is interleaved with the
+  per-name `name_show` active-filter and **early-exits** as soon as
+  `listCap` actives have been confirmed — since the scan is oldest-first
+  the first `listCap` actives ARE the oldest ever registered. Block
+  fetches now batch through `getBlocksByHeight` (default 64 blocks per
+  batch) for parallel cache fills on the cold first run. New env knobs:
+  `BTCEXP_NAMES_OLDEST_FROM_HEIGHT` (explicit start height),
+  `BTCEXP_NAMES_OLDEST_BATCH_SIZE`. The legacy
+  `BTCEXP_NAMES_OLDEST_LOOKBACK_BLOCKS` still works if you want the old
+  windowed behaviour.
+
+* Homepage *Recent Name Operations* tile now reports the **TOTAL**
+  mempool-name-op count and the total node mempool size (`getmempoolinfo`),
+  not just the truncated row count. Caption now reads e.g.
+  *"42 name ops pending in mempool (showing 15) (of 1,238 total mempool
+  txs), 87 confirmed in last 6 blocks (showing 15)"*. Display is still
+  capped to keep the tile compact.
+
+* Homepage *Latest Blocks* default block count bumped from 10 → 12.
+  Slow-device-mode default unchanged at 5. Override with
+  `BTCEXP_UI_HOME_PAGE_LATEST_BLOCKS_COUNT`.
+
+---
+
 ##### nmc-3.6.24
 ###### 2026-05-06
 

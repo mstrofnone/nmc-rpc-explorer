@@ -2629,16 +2629,39 @@ router.get("/snippet/recent-name-ops", asyncHandler(async (req, res, next) => {
 		}
 
 		const rawTxs = await coreApi.getRawTransactions(txids);
-		const ops = nameApi.collectNameOps(rawTxs).slice(0, limit);
+		const opsAll = nameApi.collectNameOps(rawTxs);
+		const opsTotal = opsAll.length;
+		const ops = opsAll.slice(0, limit);
 
 		// Best-effort: also surface pending name ops in the mempool. Falls
 		// through to an empty array if the node lacks `name_pending`.
+		// We track the FULL pending count (and the raw mempool size) so the
+		// homepage caption can report "all of the mempool transactions of the
+		// node" while only emitting `limit` rows for rendering.
+		let pendingAll = [];
 		let pending = [];
+		let pendingTotal = 0;
 		try {
 			const raw = await nameApi.namePending();
-			if (Array.isArray(raw)) pending = raw.slice(0, limit);
+			if (Array.isArray(raw)) {
+				pendingAll = raw;
+				pendingTotal = raw.length;
+				pending = raw.slice(0, limit);
+			}
 		} catch (_e) {
 			pending = [];
+			pendingTotal = 0;
+		}
+
+		// Total mempool transactions reported by the node — superset of
+		// `pendingTotal` (which is just the name-op subset). Falls back to
+		// null if `getmempoolinfo` is unavailable.
+		let mempoolTxCount = null;
+		try {
+			const mp = await coreApi.getMempoolInfo();
+			if (mp && typeof mp.size === "number") mempoolTxCount = mp.size;
+		} catch (_e) {
+			mempoolTxCount = null;
 		}
 
 		res.json({
@@ -2658,6 +2681,9 @@ router.get("/snippet/recent-name-ops", asyncHandler(async (req, res, next) => {
 				name: p.name || null,
 				valuePreview: p.value ? String(p.value).slice(0, 80) : null,
 			})),
+			opsTotal,
+			pendingTotal,
+			mempoolTxCount,
 			window: windowSize,
 			tip: tipInfo.blocks,
 		});

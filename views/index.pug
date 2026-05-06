@@ -224,10 +224,32 @@ block endOfBody
 			var rows = (payload.pending || []).map(function(op) { return renderNameOpRow(op, {pending: true}); })
 				.concat((payload.ops || []).map(function(op) { return renderNameOpRow(op); }))
 				.join("");
-			var caption = '';
-			if (havePending) {
-				caption = '<div class="text-muted small mb-2">' + payload.pending.length + ' pending in mempool, ' + (haveOps ? payload.ops.length : 0) + ' confirmed in last ' + payload.window + ' blocks.</div>';
+			// Caption reports TOTAL counts from the node (whole mempool +
+			// every name-op confirmed in the window), not just the rows we
+			// chose to render. We only surface a subset of the rows below to
+			// keep the tile compact, but the caption is the truth.
+			var pendingShown = (payload.pending || []).length;
+			var pendingTotal = (typeof payload.pendingTotal === "number") ? payload.pendingTotal : pendingShown;
+			var opsShown = (payload.ops || []).length;
+			var opsTotal = (typeof payload.opsTotal === "number") ? payload.opsTotal : opsShown;
+			var mempoolTxCount = (typeof payload.mempoolTxCount === "number") ? payload.mempoolTxCount : null;
+			var pendingFrag;
+			if (pendingTotal > pendingShown) {
+				pendingFrag = pendingTotal.toLocaleString() + ' name op' + (pendingTotal === 1 ? '' : 's')
+					+ ' pending in mempool (showing ' + pendingShown.toLocaleString() + ')';
+			} else {
+				pendingFrag = pendingTotal.toLocaleString() + ' name op' + (pendingTotal === 1 ? '' : 's') + ' pending in mempool';
 			}
+			if (mempoolTxCount !== null) {
+				pendingFrag += ' (of ' + mempoolTxCount.toLocaleString() + ' total mempool tx' + (mempoolTxCount === 1 ? '' : 's') + ')';
+			}
+			var opsFrag;
+			if (opsTotal > opsShown) {
+				opsFrag = opsTotal.toLocaleString() + ' confirmed in last ' + payload.window + ' blocks (showing ' + opsShown.toLocaleString() + ')';
+			} else {
+				opsFrag = opsTotal.toLocaleString() + ' confirmed in last ' + payload.window + ' blocks';
+			}
+			var caption = '<div class="text-muted small mb-2">' + pendingFrag + ', ' + opsFrag + '.</div>';
 			el.innerHTML = caption + '<div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Op</th><th>Name</th><th>Value</th><th>Tx</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
 		}
 
