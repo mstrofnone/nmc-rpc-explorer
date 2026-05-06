@@ -372,6 +372,7 @@ block content
 						thead
 							tr
 								th(style="width:6rem") Height
+								th(style="width:11rem") Date
 								th(style="width:9rem") Op
 								th Value
 								th(style="width:18rem") Tx
@@ -391,6 +392,11 @@ block content
 									td
 										if (entry.height != null && entry.height >= 0)
 											a(href=`./block-height/${entry.height}`)= entry.height
+										else
+											span.text-muted —
+									td.small
+										if (entry.blocktime)
+											+timestamp(entry.blocktime, {includeAgo:false})
 										else
 											span.text-muted —
 									td

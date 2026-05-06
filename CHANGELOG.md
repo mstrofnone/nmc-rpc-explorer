@@ -1,3 +1,25 @@
+##### nmc-3.6.22
+###### 2026-05-06
+
+**`/name/<n>` history table — new Date column.**
+
+The per-name history table on `/name/<n>` now shows a Date column
+right after Height, using the same `+timestamp` mixin as every other
+timestamp on the explorer (so it matches the user's timezone setting,
+shrinks to time-only for "today" rows, and exposes the full UTC time
+in the hover tooltip).
+
+The chain-walk reconstruction path already populated `entry.blocktime`
+from the raw tx, so it shows up for free there. The `name_history`
+RPC path only returns `height`, so for those entries the route now
+looks up the block header via `coreApi.getBlockHeaderByHeight`
+(15-minute cached) and stamps `blocktime` onto each entry. Lookups
+that fail stay silent and the cell renders an em-dash.
+
+No new RPCs added; no new top-level config; no kill-switch needed.
+
+---
+
 ##### nmc-3.6.21
 ###### 2026-05-05
 

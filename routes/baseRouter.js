@@ -2933,6 +2933,24 @@ router.get(/^\/name\/(.+)$/, asyncHandler(async (req, res, next) => {
 			}
 		}
 
+		// Enrich each history entry with `blocktime` (unix secs) so the view
+		// can render a human date column. `name_history` RPC doesn't return a
+		// timestamp, only `height`; the chain-walk reconstruction already
+		// fills `blocktime` from the raw tx, so this loop only does extra
+		// work on the name_history path. Headers are 15-min cached in
+		// `coreApi.getBlockHeaderByHeight`, so this is cheap on repeat hits.
+		if (Array.isArray(res.locals.nameHistory) && res.locals.nameHistory.length) {
+			await Promise.all(res.locals.nameHistory.map(async (entry) => {
+				if (!entry || entry.blocktime || entry.height == null || entry.height < 0) return;
+				try {
+					const hdr = await coreApi.getBlockHeaderByHeight(entry.height);
+					if (hdr && typeof hdr.time === "number") {
+						entry.blocktime = hdr.time;
+					}
+				} catch (_e) { /* leave blocktime unset; view shows em-dash */ }
+			}));
+		}
+
 		res.render("name");
 	} catch (err) {
 		// Build a rich diagnostic for the lookup-failed page so the user can
