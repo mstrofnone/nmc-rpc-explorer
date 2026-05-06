@@ -857,6 +857,159 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 }
 
 // ---------------------------------------------------------------------------
+// reconstructNameHistory(name, { coreApi, maxSteps })
+//
+// Returns the full operational history of a Namecoin name as an array of
+//   { op, value, value_encoding, height, txid, vout, blockhash, blocktime }
+// entries, ordered firstupdate-first (oldest → newest, matching the layout
+// `name_history` itself uses when `-namehistory` is enabled). This is a
+// best-effort fallback for nodes that DO NOT have `-namehistory` set: every
+// Namecoin name is a chain of UTXOs (`name_firstupdate → name_update →
+// name_update → … → current`), with each subsequent update tx spending
+// exactly one prior name-output and creating exactly one new name-output, so
+// we can walk the chain backwards from the current `name_show` tip.
+//
+// Requirements on the upstream node:
+//   - `-txindex=1` (so `getrawtransaction <txid>` resolves arbitrary txids);
+//     without txindex the walk cannot resolve the prevout txs and we fall back
+//     to whatever single entry `name_show` already gave us.
+//
+// The walk is bounded by `maxSteps` (default 5000) for safety against
+// pathological loops; in practice even very long-lived names (>10y) sit in
+// the low-thousands of updates.
+// ---------------------------------------------------------------------------
+async function reconstructNameHistory(name, { coreApi = null, maxSteps = 5000 } = {}) {
+	const _coreApi = coreApi || require("./coreApi");
+	const startedAt = Date.now();
+	let entries = [];
+	let warnings = [];
+
+	let showInfo;
+	try {
+		showInfo = await nameShow(name);
+	} catch (e) {
+		return { entries: [], reconstructed: false, warnings: [`name_show failed: ${e.message || e}`], elapsedMs: Date.now() - startedAt };
+	}
+	if (!showInfo || !showInfo.txid) {
+		return { entries: [], reconstructed: false, warnings: ["name_show returned no txid"], elapsedMs: Date.now() - startedAt };
+	}
+
+	let curTxid = showInfo.txid;
+	let curVout = typeof showInfo.vout === "number" ? showInfo.vout : null;
+	let curBlockhash = null;
+	if (typeof showInfo.height === "number" && showInfo.height >= 0) {
+		try { curBlockhash = await _coreApi.getBlockHashByHeight(showInfo.height); } catch (_e) { /* ignore */ }
+	}
+
+	let step = 0;
+	while (curTxid && step < maxSteps) {
+		step++;
+		let tx;
+		try {
+			tx = await _coreApi.getRawTransaction(curTxid, curBlockhash || undefined);
+		} catch (e) {
+			warnings.push(`getrawtransaction ${curTxid} failed: ${e.message || e}`);
+			break;
+		}
+		if (!tx || !Array.isArray(tx.vout)) {
+			warnings.push(`tx ${curTxid} had no vout`);
+			break;
+		}
+
+		// Find THIS tx's name-output for our name. There can be at most one
+		// (Namecoin consensus) but we still match by name to defend against
+		// txs that carry name ops for unrelated names alongside ours.
+		let nameOut = null;
+		let nameOutIdx = -1;
+		for (let i = 0; i < tx.vout.length; i++) {
+			const v = tx.vout[i];
+			const no = v && v.scriptPubKey && v.scriptPubKey.nameOp;
+			if (no && no.name === name) {
+				nameOut = v;
+				nameOutIdx = i;
+				break;
+			}
+		}
+		if (!nameOut) {
+			// Couldn't find the name op on this tx — dead end.
+			warnings.push(`tx ${curTxid} carries no name op for ${name}`);
+			break;
+		}
+		const nameOp = nameOut.scriptPubKey.nameOp;
+
+		// Resolve this tx's height/blockhash. `getrawtransaction <txid> 1`
+		// returns `blockhash` whenever the tx is confirmed; we then convert
+		// that to a height via `getblockheader`.
+		let thisHeight = null;
+		let thisBlockhash = tx.blockhash || curBlockhash || null;
+		if (thisBlockhash) {
+			try {
+				const hdr = await _coreApi.getBlockHeaderByHash(thisBlockhash);
+				if (hdr && typeof hdr.height === "number") thisHeight = hdr.height;
+			} catch (_e) { /* leave height null */ }
+		}
+
+		entries.push({
+			op: nameOp.op || null,
+			name: nameOp.name || name,
+			value: nameOp.value || null,
+			value_encoding: nameOp.value_encoding || null,
+			height: thisHeight,
+			txid: curTxid,
+			vout: nameOutIdx,
+			blockhash: thisBlockhash,
+			blocktime: tx.blocktime || tx.time || null,
+		});
+
+		// `name_firstupdate` is the chain start (its input is the matching
+		// `name_new`, which carries only a salted commitment hash and no
+		// human-readable name). Stop here.
+		if (nameOp.op === "name_firstupdate") break;
+
+		// Walk back one step: find the input that spent a prior `name_update`
+		// or `name_firstupdate` output for THIS name. There is exactly one
+		// such input on a well-formed name update; we still scan all inputs
+		// and pick the first match for resilience.
+		let foundPrev = null;
+		for (const vin of (tx.vin || [])) {
+			if (!vin || !vin.txid || typeof vin.vout !== "number") continue;
+			let prevTx;
+			try {
+				prevTx = await _coreApi.getRawTransaction(vin.txid);
+			} catch (_e) {
+				// txindex likely off, or pruned — skip this input.
+				continue;
+			}
+			if (!prevTx || !Array.isArray(prevTx.vout)) continue;
+			const prevOut = prevTx.vout[vin.vout];
+			const prevNameOp = prevOut && prevOut.scriptPubKey && prevOut.scriptPubKey.nameOp;
+			if (prevNameOp && prevNameOp.name === name) {
+				foundPrev = { txid: vin.txid, vout: vin.vout, blockhash: prevTx.blockhash || null };
+				break;
+			}
+		}
+		if (!foundPrev) {
+			warnings.push(`could not locate prior name UTXO from tx ${curTxid} (txindex disabled or pruned?)`);
+			break;
+		}
+		curTxid = foundPrev.txid;
+		curVout = foundPrev.vout;
+		curBlockhash = foundPrev.blockhash;
+	}
+
+	// Return firstupdate-first, matching `name_history` ordering.
+	entries.reverse();
+	return {
+		entries,
+		reconstructed: true,
+		steps: step,
+		maxSteps,
+		warnings,
+		elapsedMs: Date.now() - startedAt,
+	};
+}
+
+// ---------------------------------------------------------------------------
 // getRecentNameFirstUpdates({ windowBlocks, listCap, perBlockCap })
 //
 // Walks the last `windowBlocks` blocks (default 2016 ≈ 2 weeks at 10 min/block,
@@ -976,6 +1129,7 @@ module.exports = {
 	renderNameValue,
 	splitNamespace,
 	getRecentNameFirstUpdates,
+	reconstructNameHistory,
 	namespaceLabel,
 	parseImports,
 	collectAllImports,

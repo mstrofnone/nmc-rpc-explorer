@@ -2883,11 +2883,35 @@ router.get(/^\/name\/(.+)$/, asyncHandler(async (req, res, next) => {
 			res.locals.pendingForName = [];
 		}
 
-		// name_history is optional (requires -namehistory). Best-effort.
+		// name_history is the cheap path — it requires `-namehistory` on the
+		// upstream node, which is OFF by default and rare in the wild. When
+		// it's enabled we just pass the result through. Otherwise we walk the
+		// chain of name UTXOs ourselves via `reconstructNameHistory`, which
+		// gives the same {op, value, height, txid} shape from any node that
+		// has `-txindex` (much more commonly enabled).
+		res.locals.nameHistory = null;
+		res.locals.nameHistorySource = null;
+		res.locals.nameHistoryWarnings = [];
 		try {
-			res.locals.nameHistory = await nameApi.nameHistory(rawName);
+			const hist = await nameApi.nameHistory(rawName);
+			if (Array.isArray(hist) && hist.length) {
+				res.locals.nameHistory = hist;
+				res.locals.nameHistorySource = "name_history";
+			}
 		} catch (_e) {
-			res.locals.nameHistory = null;
+			// Most likely "-namehistory is not enabled". Fall through to chain walk.
+		}
+		if (!res.locals.nameHistory) {
+			try {
+				const recon = await nameApi.reconstructNameHistory(rawName, { coreApi });
+				if (recon && Array.isArray(recon.entries) && recon.entries.length) {
+					res.locals.nameHistory = recon.entries;
+					res.locals.nameHistorySource = "reconstructed";
+					res.locals.nameHistoryWarnings = recon.warnings || [];
+				}
+			} catch (e) {
+				res.locals.nameHistoryWarnings = [`reconstruction failed: ${e.message || e}`];
+			}
 		}
 
 		res.render("name");

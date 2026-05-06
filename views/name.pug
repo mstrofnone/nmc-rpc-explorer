@@ -200,16 +200,52 @@ block content
 
 		if (nameHistory && nameHistory.length)
 			+contentSection(`History (${nameHistory.length})`)
+				p.text-muted.small.mb-3.
+					Full operational chain of this name from
+					<code>name_firstupdate</code> through every <code>name_update</code>
+					up to the current state.  Sorted newest-first; each entry is the
+					latest at the time of that block.
+
+				if (nameHistorySource === "name_history")
+					p.text-muted.small.mb-3.
+						Sourced directly from the upstream node's
+						<code>name_history</code> RPC
+						(requires <code>-namehistory</code>).
+				else if (nameHistorySource === "reconstructed")
+					p.text-muted.small.mb-3.
+						Reconstructed by walking the chain of name UTXOs backwards
+						from <code>name_show</code> (the upstream node has
+						<code>-namehistory</code> disabled, so we follow each
+						<code>name_update</code> tx's input back to the previous
+						name output until <code>name_firstupdate</code>).
+
+				if (nameHistoryWarnings && nameHistoryWarnings.length)
+					.alert.alert-warning.small.mb-3
+						strong History reconstruction notes:
+						ul.mb-0.mt-1
+							each w in nameHistoryWarnings
+								li= w
+
 				.table-responsive
 					table.table.table-sm.mb-0
 						thead
 							tr
-								th Height
-								th Op
+								th(style="width:6rem") Height
+								th(style="width:9rem") Op
 								th Value
-								th(style="width:32%") Tx
+								th(style="width:18rem") Tx
 						tbody
 							each entry in nameHistory.slice().reverse()
+								- var __valStr = (entry.value == null ? "" : String(entry.value))
+								- var __valTrim = __valStr.trim()
+								- var __valIsJson = (__valTrim.startsWith("{") || __valTrim.startsWith("["))
+								- var __valParsed = null
+								if (__valIsJson)
+									- try { __valParsed = JSON.parse(__valTrim); } catch (_e) { __valParsed = null; }
+								- var __valPretty = __valParsed ? JSON.stringify(__valParsed, null, 2) : __valStr
+								- var __valPreview = __valStr.length > 240 ? (__valStr.slice(0, 240) + "…") : __valStr
+								- var __opLabel = entry.op || "name_update"
+								- var __opBadge = (__opLabel === "name_firstupdate" ? "bg-success" : (__opLabel === "name_new" ? "bg-secondary" : "bg-primary"))
 								tr
 									td
 										if (entry.height != null && entry.height >= 0)
@@ -217,8 +253,30 @@ block content
 										else
 											span.text-muted —
 									td
-										span.font-monospace.small= entry.op || "name_update"
-									td.font-monospace.small.text-truncate(style="max-width:32rem")= (entry.value || "").slice(0, 200)
+										span.badge(class=__opBadge)= __opLabel
+									td
+										if (__valStr.length === 0)
+											span.text-muted.small (empty)
+										else if (__valStr.length <= 240 && !__valIsJson)
+											code.font-monospace.small(style="white-space:pre-wrap; word-break:break-all")= __valStr
+										else
+											details
+												summary(style="cursor:pointer")
+													code.font-monospace.small= __valPreview
+												pre.small.mt-2.mb-0(style="white-space:pre-wrap; word-break:break-all; max-height:24rem; overflow:auto")= __valPretty
 									td
 										if (entry.txid)
 											a.font-monospace.small(href=`./tx/${entry.txid}`)= entry.txid.slice(0, 16) + "…"
+		else if (nameInfo && !nameLookupError)
+			//- We have a name_show but no history at all. Surface the reason.
+			+contentSection("History")
+				p.text-muted.small.mb-0.
+					Could not retrieve a history for this name.  The upstream node has
+					<code>-namehistory</code> disabled and chain-walk reconstruction
+					could not resolve previous name UTXOs (this typically means the
+					node also has <code>-txindex</code> disabled, or the relevant txs
+					have been pruned).
+				if (nameHistoryWarnings && nameHistoryWarnings.length)
+					ul.text-muted.small.mt-2.mb-0
+						each w in nameHistoryWarnings
+							li= w
