@@ -2850,6 +2850,13 @@ router.get(/^\/name\/(.+)$/, asyncHandler(async (req, res, next) => {
 		res.locals.nameQuery = rawName;
 
 		const nameInfo = await nameApi.nameShow(rawName);
+		if (!nameInfo) {
+			// Defensive: nameShow should either return an object or throw.
+			// If somehow we resolve with undefined/null, surface a clear
+			// failure instead of crashing the template with
+			// `Cannot read properties of undefined (reading 'value')`.
+			throw new Error(`name_show returned no record for ${rawName}`);
+		}
 		res.locals.nameInfo = nameInfo;
 		res.locals.namespace = nameApi.splitNamespace(rawName);
 		res.locals.namespaceLabel = nameApi.namespaceLabel(res.locals.namespace.namespace);

@@ -535,6 +535,24 @@ function getRpcDataWithParams(request, verifyingConnection=false) {
 			
 			try {
 				const rpcResult = await client.request(request.method, request.parameters);
+
+				// jayson resolves with `{result, error}` where exactly one is set.
+				// On a JSON-RPC error response (e.g. namecoind's `-4 "name expired"`)
+				// `result` is undefined; previously we just `resolve(undefined)` and
+				// the caller crashed downstream with cryptic
+				// `Cannot read properties of undefined (reading '...')` errors.
+				// Promote the error response to a real rejection so callers get a
+				// meaningful message and can branch on `err.code`.
+				if (rpcResult && rpcResult.error) {
+					const rpcErr = new Error(rpcResult.error.message || `RpcError: ${request.method}`);
+					rpcErr.code = rpcResult.error.code;
+					rpcErr.rpcMethod = request.method;
+					rpcErr.rpcParameters = request.parameters;
+					logStats(request.method, true, new Date().getTime() - startTime, false);
+					debugLog(`RpcErrorResponse: method=${request.method} code=${rpcResult.error.code} message=${rpcResult.error.message}`);
+					throw rpcErr;
+				}
+
 				const result = rpcResult.result;
 
 				//console.log(`RPC: request=${request}, result=${JSON.stringify(result)}`);

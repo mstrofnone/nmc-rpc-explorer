@@ -21,10 +21,19 @@
 const rpcApi = require("./rpcApi.js");
 const { bech32 } = require("bech32");
 
-function nameShow(name) {
+function nameShow(name, options = {}) {
+	// Always pass `allowExpired: true` by default so /name/<n> can render
+	// data for names that have expired but whose last record is still in
+	// the chain index. Without this, namecoind returns RPC error -4 ("name
+	// expired") and the entire page falls into the lookup-failure branch —
+	// even though the chain still has the name's last value, history,
+	// address, etc., all of which are useful to display. Callers that
+	// specifically want the active-only behaviour can pass
+	// `{ allowExpired: false }`.
+	const opts = Object.assign({ allowExpired: true }, options);
 	return rpcApi.getRpcDataWithParams({
 		method: "name_show",
-		parameters: [name],
+		parameters: [name, opts],
 	});
 }
 
