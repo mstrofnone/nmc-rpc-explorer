@@ -1,3 +1,55 @@
+##### nmc-3.6.26
+###### 2026-05-07
+
+**Code health pass: concurrency, retries, observability, cache eviction.**
+
+* New `utils.pMap(items, fn, { concurrency })` helper. Bounded-parallel
+  async map with stable input-order results. `getBlocksByHeight` now
+  uses it (default concurrency 8, override via `BTCEXP_BLOCK_FETCH_CONCURRENCY`)
+  so a cold ask for hundreds of blocks doesn't fan out to namecoind in
+  one shot. `getOldestActiveNames` uses it too for the per-batch
+  `name_show` drain (capped at 8 in flight).
+
+* New `nameShowActive(name)` wrapper distinguishes namecoind error code
+  -4 ("name expired" / "never existed") from transient RPC failures and
+  retries the latter once with a 200ms backoff. Used by
+  `getOldestActiveNames`. Background scanners no longer silently miscount
+  a network blip as an expired name.
+
+* New `decorateNameRow` / `decorateNameRows` helpers in `nameApi`.
+  `routes/baseRouter.js` no longer redefines a `_decorate` closure
+  inline; all four "browse names" sections (expiringSoon,
+  recentlyExpired, recentFirstUpdates, oldestActiveNames) go through
+  the same code path.
+
+* Homepage `Recent Name Operations` tile is now backed by a 30-second
+  background refresh (`refreshRecentNameOps` in `app.js`). The
+  `/snippet/recent-name-ops` endpoint reads `global.recentNameOps` and
+  hands it back — no more per-request `getRawTransactions` fan-out on
+  the homepage. Slow-path live-fetch still available via `?nocache=1`.
+
+* New `BackgroundTask` registry (`app/backgroundTasks.js`). All five
+  Namecoin-side refreshers (namesSummary, recentFirstUpdates,
+  oldestActiveNames, nameTxStats, recentNameOps) register with it.
+  Adds runs / successes / failures / lastDuration / lastError /
+  nextRunAt tracking per task.
+
+* New `/api/health`, `/api/background-tasks`, `/api/metrics` endpoints.
+  Health + metrics bypass the no-RPC error page so they keep working
+  during a namecoind reindex / restart. Metrics is plain Prometheus
+  text exposition with per-task `nmcexplorer_bgtask_*` gauges plus
+  tip-height and mempool-size.
+
+* Fixed the LRU cache eviction class. `lru-cache` v10 honours per-call
+  `ttl` only lazily — stale entries sit in memory until someone reads
+  the key or `max` LRU pushes them out. Added `ttlAutopurge: true` +
+  `allowStale: false` to `cacheUtils.lruCache(size)` so stale entries
+  are reaped eagerly. Once deployed this lets us drop
+  `BTCEXP_NO_INMEMORY_RPC_CACHE=true` on the server and recover the
+  in-memory RPC cache hit rate.
+
+---
+
 ##### nmc-3.6.25
 ###### 2026-05-07
 

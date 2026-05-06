@@ -21,6 +21,7 @@ const config = require("./../app/config.js");
 const utils = require('./../app/utils.js');
 const coreApi = require("./../app/api/coreApi.js");
 const nameApi = require("./../app/api/nameApi.js");
+const backgroundTasks = require("./../app/backgroundTasks.js");
 const addressApi = require("./../app/api/addressApi.js");
 const xyzpubApi = require("./../app/api/xyzpubApi.js");
 const rpcApi = require("./../app/api/rpcApi.js");
@@ -1258,5 +1259,95 @@ router.get("/holidays/:day", function(req, res, next) {
 	next();
 });
 
+
+// /api/health — minimal liveness probe (no RPC). Always 200, even if
+// namecoind is wedged. Useful behind a load balancer / monitor.
+router.get("/health", (req, res) => {
+	res.json({
+		ok: true,
+		ts: Date.now(),
+		uptime: process.uptime(),
+		appVersion: global.appVersion || null,
+		rpcConnected: !!global.rpcConnected,
+	});
+});
+
+// /api/background-tasks — JSON snapshot of all registered background
+// refreshers (last-run, last-error, next-run). Useful for /admin and
+// for ad-hoc "is the explorer healthy right now?" checks.
+router.get("/background-tasks", (req, res) => {
+	res.json({ tasks: backgroundTasks.list(), now: Date.now() });
+});
+
+// /api/metrics — Prometheus text exposition for the same. No external
+// prom-client dep — we hand-write the format, since we only emit a
+// dozen-ish gauges.  Designed to be scraped from localhost; if you
+// expose it externally, do so behind basic auth.
+router.get("/metrics", asyncHandler(async (req, res) => {
+	const lines = [];
+	const esc = (s) => String(s).replace(/[\\\"\n]/g, "_");
+
+	lines.push("# HELP nmcexplorer_up 1 if the explorer process is running.");
+	lines.push("# TYPE nmcexplorer_up gauge");
+	lines.push("nmcexplorer_up 1");
+
+	lines.push("# HELP nmcexplorer_uptime_seconds Process uptime.");
+	lines.push("# TYPE nmcexplorer_uptime_seconds counter");
+	lines.push(`nmcexplorer_uptime_seconds ${process.uptime().toFixed(3)}`);
+
+	lines.push("# HELP nmcexplorer_rpc_connected 1 if namecoind RPC is connected.");
+	lines.push("# TYPE nmcexplorer_rpc_connected gauge");
+	lines.push(`nmcexplorer_rpc_connected ${global.rpcConnected ? 1 : 0}`);
+
+	// Best-effort tip height
+	try {
+		const info = await coreApi.getBlockchainInfo();
+		if (info && typeof info.blocks === "number") {
+			lines.push("# HELP nmcexplorer_tip_height Current tip height as known by the node.");
+			lines.push("# TYPE nmcexplorer_tip_height gauge");
+			lines.push(`nmcexplorer_tip_height ${info.blocks}`);
+		}
+	} catch (_e) { /* leave it out */ }
+
+	// Best-effort mempool size
+	try {
+		const mp = await coreApi.getMempoolInfo();
+		if (mp && typeof mp.size === "number") {
+			lines.push("# HELP nmcexplorer_mempool_tx_count Current mempool transaction count.");
+			lines.push("# TYPE nmcexplorer_mempool_tx_count gauge");
+			lines.push(`nmcexplorer_mempool_tx_count ${mp.size}`);
+		}
+	} catch (_e) { /* leave it out */ }
+
+	// Per-task gauges. Each label = task id.
+	const tasks = backgroundTasks.list();
+	lines.push("# HELP nmcexplorer_bgtask_runs_total Total runs of a background refresher.");
+	lines.push("# TYPE nmcexplorer_bgtask_runs_total counter");
+	for (const t of tasks) lines.push(`nmcexplorer_bgtask_runs_total{task="${esc(t.id)}"} ${t.runs}`);
+
+	lines.push("# HELP nmcexplorer_bgtask_failures_total Total failed runs.");
+	lines.push("# TYPE nmcexplorer_bgtask_failures_total counter");
+	for (const t of tasks) lines.push(`nmcexplorer_bgtask_failures_total{task="${esc(t.id)}"} ${t.failures}`);
+
+	lines.push("# HELP nmcexplorer_bgtask_last_duration_ms Last run duration in ms.");
+	lines.push("# TYPE nmcexplorer_bgtask_last_duration_ms gauge");
+	for (const t of tasks) {
+		if (typeof t.lastDurationMs === "number") {
+			lines.push(`nmcexplorer_bgtask_last_duration_ms{task="${esc(t.id)}"} ${t.lastDurationMs}`);
+		}
+	}
+
+	lines.push("# HELP nmcexplorer_bgtask_seconds_since_success Seconds since the last successful run.");
+	lines.push("# TYPE nmcexplorer_bgtask_seconds_since_success gauge");
+	for (const t of tasks) {
+		if (typeof t.lastFinishedAt === "number" && t.lastError === null) {
+			const sec = Math.max(0, (Date.now() - t.lastFinishedAt) / 1000);
+			lines.push(`nmcexplorer_bgtask_seconds_since_success{task="${esc(t.id)}"} ${sec.toFixed(1)}`);
+		}
+	}
+
+	res.set("Content-Type", "text/plain; version=0.0.4");
+	res.send(lines.join("\n") + "\n");
+}));
 
 module.exports = router;

@@ -21,6 +21,56 @@
 const rpcApi = require("./rpcApi.js");
 const { bech32 } = require("bech32");
 
+// namecoind error codes we treat as authoritative "this name has no live
+// record" answers.  -4 covers both "name expired" and "name never
+// existed" (per namecoind src/wallet/rpcnames.cpp). Any OTHER error —
+// transport/timeout/serialization — is treated as a transient blip and
+// retried by `nameShowActive`.
+const NAME_ABSENT_RPC_CODE = -4;
+
+// Distinguish authoritative "name does not exist / is expired" answers
+// from transient errors.  Used by background scanners that need to know
+// whether to treat a failure as "definitely not active" (skip) vs "RPC
+// blip" (retry once before skipping).
+function isAuthoritativeAbsentError(err) {
+	if (!err) return false;
+	if (err.code === NAME_ABSENT_RPC_CODE) return true;
+	// jayson sometimes surfaces the namecoind message without code mapping;
+	// match the well-known prefixes too as a belt-and-braces check.
+	const msg = String(err.message || "");
+	return /name expired|name not found|never existed/i.test(msg);
+}
+
+// `nameShow` with allowExpired:false PLUS one retry on non-authoritative
+// failures.  Returns:
+//   { ok: true,  info }    — active record found
+//   { ok: false, absent }  — absent==true means namecoind authoritatively
+//                            said the name is expired/never-existed
+//                            (skip without counting as error); absent==false
+//                            means a transient RPC error survived the retry
+//                            and the caller may want to log it.
+async function nameShowActive(name, { retryDelayMs = 200 } = {}) {
+	try {
+		const info = await nameShow(name, { allowExpired: false });
+		if (info && !info.expired) return { ok: true, info };
+		return { ok: false, absent: true };
+	} catch (err) {
+		if (isAuthoritativeAbsentError(err)) return { ok: false, absent: true };
+		// One backoff retry for transient blips (network reset, RPC overload,
+		// JSON parse hiccup). If still failing, give up and propagate as
+		// non-authoritative absent.
+		await new Promise((r) => setTimeout(r, retryDelayMs));
+		try {
+			const info = await nameShow(name, { allowExpired: false });
+			if (info && !info.expired) return { ok: true, info };
+			return { ok: false, absent: true };
+		} catch (err2) {
+			if (isAuthoritativeAbsentError(err2)) return { ok: false, absent: true };
+			return { ok: false, absent: false, error: err2 };
+		}
+	}
+}
+
 function nameShow(name, options = {}) {
 	// Always pass `allowExpired: true` by default so /name/<n> can render
 	// data for names that have expired but whose last record is still in
@@ -1262,17 +1312,22 @@ async function getOldestActiveNames({ windowBlocks = null, fromHeight: fromHeigh
 			}
 		}
 
-		// Drain this batch's candidates oldest-first via name_show. Stop the
-		// whole outer walk as soon as items hits listCap.
-		for (const cand of batchCandidates) {
-			if (!cand.name) continue;
-			let info;
-			try {
-				info = await nameShow(cand.name, { allowExpired: false });
-			} catch (_e) {
-				continue;   // expired, never-existed, or RPC blip — skip
-			}
-			if (!info || info.expired) continue;
+		// Drain this batch's candidates oldest-first via name_show.  Run
+		// the lookups with bounded parallelism via pMap, but preserve
+		// oldest-first order in the items array so early-exit still picks
+		// the genuinely oldest registrations first.
+		const utils = require("../utils.js");
+		const nameShowConcurrency = Math.max(1, Math.min(8, batchCandidates.length || 1));
+		const results = await utils.pMap(batchCandidates, async (cand) => {
+			if (!cand.name) return null;
+			return { cand, res: await nameShowActive(cand.name) };
+		}, { concurrency: nameShowConcurrency });
+
+		for (const r of results) {
+			if (!r || !r.res) continue;
+			const { cand, res } = r;
+			if (!res.ok) continue;   // absent (expired/never-existed) OR persistent RPC blip
+			const info = res.info;
 			totalActive++;
 			if (items.length < listCap) {
 				items.push({
@@ -1552,8 +1607,31 @@ async function expandNameLifecycle(name, history, { coreApi = null } = {}) {
 	};
 }
 
+// Per-row decorator used by every "browse names" UI section: enriches
+// each entry with `valueRender` (parsed JSON / pretty value) and
+// `namespace` (parsed `d/`, `dd/`, `id/`, etc).  Background scanners
+// only persist raw `value` + `value_encoding` to keep their RAM caches
+// compact, so this runs at render time.  Idempotent and side-effect
+// free; safe to .map() over hundreds of rows.
+function decorateNameRow(entry) {
+	if (!entry) return entry;
+	const nm = entry.name || "";
+	return Object.assign({}, entry, {
+		valueRender: renderNameValue(entry.value, entry.value_encoding),
+		namespace: nm ? splitNamespace(nm).namespace : null,
+	});
+}
+function decorateNameRows(rows) {
+	if (!Array.isArray(rows)) return [];
+	return rows.map(decorateNameRow);
+}
+
 module.exports = {
 	nameShow,
+	nameShowActive,
+	isAuthoritativeAbsentError,
+	decorateNameRow,
+	decorateNameRows,
 	nameHistory,
 	nameScan,
 	namePending,

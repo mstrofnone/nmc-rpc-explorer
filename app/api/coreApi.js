@@ -836,20 +836,18 @@ function getBlockHashByHeight(blockHeight) {
 	});
 }
 
+// Bounded-parallel batch fetch. Cache-served heights resolve essentially
+// for free (microseconds), but a cold ask for hundreds of historical
+// blocks would otherwise issue every getblock RPC simultaneously and risk
+// fork-bombing namecoind. Concurrency cap is overridable via
+// BTCEXP_BLOCK_FETCH_CONCURRENCY (default: 8).
+const BLOCK_FETCH_CONCURRENCY = (() => {
+	const v = parseInt(process.env.BTCEXP_BLOCK_FETCH_CONCURRENCY, 10);
+	return Number.isFinite(v) && v > 0 ? v : 8;
+})();
+
 function getBlocksByHeight(blockHeights) {
-	return new Promise(function(resolve, reject) {
-		let promises = [];
-		for (let i = 0; i < blockHeights.length; i++) {
-			promises.push(getBlockByHeight(blockHeights[i]));
-		}
-
-		Promise.all(promises).then(function(results) {
-			resolve(results);
-
-		}).catch(function(err) {
-			reject(err);
-		});
-	});
+	return utils.pMap(blockHeights, (h) => getBlockByHeight(h), { concurrency: BLOCK_FETCH_CONCURRENCY });
 }
 
 function getBlockHeaderByHash(hash) {

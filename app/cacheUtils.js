@@ -90,8 +90,23 @@ function createTieredCache(cacheObjs) {
 }
 
 function lruCache(size) {
+	// Note: per-call `ttl` (passed to .set(key, val, {ttl})) WORKS in
+	// lru-cache v10 even without a default `ttl` here, BUT eviction is
+	// lazy — stale entries are only purged on read.  Without
+	// `ttlAutopurge: true`, write-once-never-read keys (the common case
+	// for tx-fetch caches behind a one-shot page render) sit in memory
+	// until LRU `max` pushes them out, inflating the working-set size
+	// reported by `cache.size` / `cache.itemCount` and the per-cache
+	// stat-tracker gauges.  `ttlAutopurge` registers an internal timer
+	// per entry that frees expired ones eagerly.  This is the upstream
+	// fix referenced as "the cache eviction bug" in our deploy notes —
+	// once enabled, BTCEXP_NO_INMEMORY_RPC_CACHE=true is no longer
+	// needed in production.  We also keep `allowStale: false` (the
+	// default) so a per-call ttl miss never returns the old value.
 	return new LRUCache({
-		max: size
+		max: size,
+		ttlAutopurge: true,
+		allowStale: false,
 	});
 }
 

@@ -84,6 +84,7 @@ const pug = require("pug");
 const momentDurationFormat = require("moment-duration-format");
 const coreApi = require("./app/api/coreApi.js");
 const nameApi = require("./app/api/nameApi.js");
+const backgroundTasks = require("./app/backgroundTasks.js");
 const rpcApi = require("./app/api/rpcApi.js");
 const coins = require("./app/coins.js");
 const axios = require("axios");
@@ -646,36 +647,54 @@ async function onRpcConnectionVerified(getnetworkinfo, getblockchaininfo) {
 	refreshUtxoSetSummary();
 	setInterval(refreshUtxoSetSummary, 30 * 60 * 1000);
 
-	// Namecoin: walk name_scan once per 30 min so the explorer always has a
-	// fresh count of registered names (active + expired) and per-namespace
-	// breakdown. The scan can take 1–2 minutes on a busy chain, so it lives
-	// off the request path.
-	refreshNamesSummary();
-	setInterval(refreshNamesSummary, 30 * 60 * 1000);
+	// Namecoin: register all the namecoin-specific background refreshers
+	// with the BackgroundTask registry so /metrics + /admin can surface
+	// last-run / failure / next-run for each one. Functional behaviour is
+	// unchanged from the bare setInterval pattern — just observable now.
+	backgroundTasks.register({
+		id: "namesSummary",
+		name: "Names summary (name_scan)",
+		description: "Walks name_scan every 30 min for active/expired counts + per-namespace breakdown.",
+		intervalMs: 30 * 60 * 1000,
+		disableEnv: "BTCEXP_DISABLE_NAMES_SUMMARY",
+		fn: refreshNamesSummary,
+	}).startSoon();
 
-	// Namecoin: walk the last ~2016 blocks and collect every name_firstupdate
-	// op in that window so the /names "New Names" section can render brand-new
-	// registrations alongside the expiring/recently-expired sections (which
-	// already share the same 2016-block window). Block fetches hit the
-	// existing 15-min coreApi blockCache, so the steady-state cost after the
-	// first run is just the new-tip blocks since the previous refresh.
-	refreshRecentFirstUpdates();
-	setInterval(refreshRecentFirstUpdates, 30 * 60 * 1000);
+	backgroundTasks.register({
+		id: "recentFirstUpdates",
+		name: "Recent firstupdates (~2016-block window)",
+		description: "Collects name_firstupdate ops in the last ~2 weeks for the 'New Names' section.",
+		intervalMs: 30 * 60 * 1000,
+		disableEnv: "BTCEXP_DISABLE_NAMES_SUMMARY",
+		fn: refreshRecentFirstUpdates,
+	}).startSoon();
 
-	// Namecoin: walk a much wider lookback window (default ~1 year), collect
-	// every `name_firstupdate` op, and check each one against `name_show` to
-	// keep only those still active. Result feeds the /names "Oldest Active
-	// Names" section. Materially more expensive than the 30-min refreshes
-	// (one `name_show` per candidate firstupdate), so it runs on a 60-min
-	// cadence and is gated behind the same disable flag.
-	refreshOldestActiveNames();
-	setInterval(refreshOldestActiveNames, 60 * 60 * 1000);
+	backgroundTasks.register({
+		id: "oldestActiveNames",
+		name: "Oldest active names (full-chain scan)",
+		description: "Scans firstupdates oldest-first; early-exits when listCap actives are confirmed. Refreshed hourly.",
+		intervalMs: 60 * 60 * 1000,
+		disableEnv: "BTCEXP_DISABLE_NAMES_SUMMARY",
+		fn: refreshOldestActiveNames,
+	}).startSoon();
 
-	// Namecoin: walk the last ~24h of blocks and count which transactions
-	// carry name operations vs which are pure currency txs. Same off-the-
-	// request-path pattern; the tx-stats page reads from the cached value.
-	refreshNameTxStats();
-	setInterval(refreshNameTxStats, 10 * 60 * 1000);
+	backgroundTasks.register({
+		id: "nameTxStats",
+		name: "Name-tx stats (last ~24h)",
+		description: "Counts name-op vs currency-only txs in the last 144 blocks for /tx-stats.",
+		intervalMs: 10 * 60 * 1000,
+		disableEnv: "BTCEXP_DISABLE_NAME_TX_STATS",
+		fn: refreshNameTxStats,
+	}).startSoon();
+
+	backgroundTasks.register({
+		id: "recentNameOps",
+		name: "Homepage recent name ops tile",
+		description: "Refreshes the homepage tile every 30s; /snippet/recent-name-ops just reads this cache.",
+		intervalMs: 30 * 1000,
+		disableEnv: "BTCEXP_DISABLE_RECENT_NAME_OPS",
+		fn: refreshRecentNameOps,
+	}).startSoon();
 
 
 
@@ -870,6 +889,74 @@ async function refreshNameTxStats() {
 	} catch (e) {
 		debugLog("refreshNameTxStats error: " + e.message);
 		global.nameTxStats = null;
+	}
+}
+
+// Refresh the homepage "Recent Name Operations" tile cache every 30s.
+// Decoupled from the per-request snippet so the homepage doesn't pay the
+// O(blocks × txs-in-block) `getRawTransactions` fan-out on every page
+// load. The /snippet/recent-name-ops endpoint just reads global.recentNameOps.
+async function refreshRecentNameOps() {
+	if (process.env.BTCEXP_DISABLE_RECENT_NAME_OPS === "true") {
+		global.recentNameOps = null;
+		return;
+	}
+	try {
+		const windowSize = Math.min(parseInt(process.env.BTCEXP_RECENT_NAME_OPS_BLOCKS || "6", 10) || 6, 24);
+		const limit = Math.min(parseInt(process.env.BTCEXP_RECENT_NAME_OPS_LIMIT || "15", 10) || 15, 50);
+		const startedAt = Date.now();
+
+		const tipInfo = await coreApi.getBlockchainInfo();
+		const heights = [];
+		for (let i = 0; i < windowSize; i++) heights.push(tipInfo.blocks - i);
+
+		const blocks = await coreApi.getBlocksByHeight(heights);
+		const txids = [];
+		const toTxid = (entry) => (typeof entry === "string" ? entry : entry && entry.txid);
+		for (const b of blocks) {
+			if (!b || !Array.isArray(b.tx)) continue;
+			for (let i = 1; i < b.tx.length && txids.length < 400; i++) {
+				const txid = toTxid(b.tx[i]);
+				if (txid) txids.push(txid);
+			}
+		}
+
+		const rawTxs = await coreApi.getRawTransactions(txids);
+		const opsAll = nameApi.collectNameOps(rawTxs);
+
+		let pendingAll = [];
+		try {
+			const raw = await nameApi.namePending();
+			if (Array.isArray(raw)) pendingAll = raw;
+		} catch (_e) { /* node may lack name_pending; that's fine */ }
+
+		let mempoolTxCount = null;
+		try {
+			const mp = await coreApi.getMempoolInfo();
+			if (mp && typeof mp.size === "number") mempoolTxCount = mp.size;
+		} catch (_e) { /* leave null */ }
+
+		global.recentNameOps = {
+			ops: opsAll.slice(0, limit).map((op) => ({
+				txid: op.txid, vout: op.vout, op: op.op, name: op.name,
+				valuePreview: op.value ? String(op.value).slice(0, 80) : null,
+			})),
+			pending: pendingAll.slice(0, limit).map((p) => ({
+				txid: p.txid, vout: p.vout, op: p.op, name: p.name || null,
+				valuePreview: p.value ? String(p.value).slice(0, 80) : null,
+			})),
+			opsTotal: opsAll.length,
+			pendingTotal: pendingAll.length,
+			mempoolTxCount,
+			window: windowSize,
+			tip: tipInfo.blocks,
+			scannedAt: Date.now(),
+			elapsedMs: Date.now() - startedAt,
+		};
+	} catch (e) {
+		debugLog("refreshRecentNameOps error: " + e.message);
+		// Don't clobber the previous good cache on a transient failure — a
+		// stale 30-second-old payload is better than a blank tile.
 	}
 }
 
@@ -1413,7 +1500,15 @@ expressApp.use(function(req, res, next) {
 	}
 
 
-	if (!global.rpcConnected) {
+	// /api/health, /api/metrics, /api/background-tasks must work even when
+	// the RPC node is unreachable — they're operator liveness probes.
+	// Everything else falls through to the no-RPC error page below.
+	const _path = req.path || "";
+	const _bypassNoRpc = _path === "/api/health"
+		|| _path === "/api/metrics"
+		|| _path === "/api/background-tasks";
+
+	if (!global.rpcConnected && !_bypassNoRpc) {
 		res.status(500);
 		res.render('error', {
 			errorType: "noRpcConnection"

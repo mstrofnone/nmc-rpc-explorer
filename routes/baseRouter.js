@@ -2602,7 +2602,19 @@ router.get("/bitcoin.pdf", function(req, res, next) {
 // ---------------------------------------------------------------------------
 
 // JSON snippet used by the homepage tile when running in NMC mode.
+//
+// Fast path: serve the cached payload populated by refreshRecentNameOps()
+// in app.js (refreshed every 30s off the request path). The cache is
+// already shaped to the response schema, so we can just hand it back.
+//
+// Slow path: only on first boot before refreshRecentNameOps() has
+// completed (or when a `?nocache=1` query forces it), fall through to the
+// per-request fan-out below.
 router.get("/snippet/recent-name-ops", asyncHandler(async (req, res, next) => {
+	if (req.query.nocache !== "1" && global.recentNameOps) {
+		res.json(global.recentNameOps);
+		return;
+	}
 	try {
 		const tipInfo = await coreApi.getBlockchainInfo();
 		const windowSize = Math.min(parseInt(req.query.blocks || "6", 10) || 6, 24);
@@ -2851,31 +2863,22 @@ router.get("/names", asyncHandler(async (req, res, next) => {
 		res.locals.nameCount = count;
 
 		// Decorate the background-walk lists (expiringSoon / recentlyExpired /
-		// recent firstupdates) with `valueRender` for the per-row Value
-		// previews. Doing it here — in the request path — keeps the
-		// in-memory summary objects compact (we only persist the raw `value`
-		// + `value_encoding` from name_scan) and lets the JSON parse cost run
-		// only when the page is actually rendered.
-		const _decorate = (entry) => Object.assign({}, entry, {
-			valueRender: nameApi.renderNameValue(entry.value, entry.value_encoding),
-		});
+		// recent firstupdates / oldest actives) with `valueRender` + namespace
+		// for per-row previews. Done here in the request path so the in-memory
+		// summary objects stay compact (raw value + encoding only); the JSON
+		// parse runs once per render. Single shared `decorateNameRows` helper
+		// in nameApi.
 		if (global.namesSummary && Array.isArray(global.namesSummary.expiringSoon)) {
-			res.locals.expiringSoonDecorated = global.namesSummary.expiringSoon.map(_decorate);
+			res.locals.expiringSoonDecorated = nameApi.decorateNameRows(global.namesSummary.expiringSoon);
 		}
 		if (global.namesSummary && Array.isArray(global.namesSummary.recentlyExpired)) {
-			res.locals.recentlyExpiredDecorated = global.namesSummary.recentlyExpired.map(_decorate);
+			res.locals.recentlyExpiredDecorated = nameApi.decorateNameRows(global.namesSummary.recentlyExpired);
 		}
 		if (global.recentFirstUpdates && Array.isArray(global.recentFirstUpdates.items)) {
-			res.locals.recentFirstUpdatesDecorated = global.recentFirstUpdates.items.map((entry) => Object.assign({}, entry, {
-				valueRender: nameApi.renderNameValue(entry.value, entry.value_encoding),
-				namespace: nameApi.splitNamespace(entry.name || "").namespace,
-			}));
+			res.locals.recentFirstUpdatesDecorated = nameApi.decorateNameRows(global.recentFirstUpdates.items);
 		}
 		if (global.oldestActiveNames && Array.isArray(global.oldestActiveNames.items)) {
-			res.locals.oldestActiveNamesDecorated = global.oldestActiveNames.items.map((entry) => Object.assign({}, entry, {
-				valueRender: nameApi.renderNameValue(entry.value, entry.value_encoding),
-				namespace: nameApi.splitNamespace(entry.name || "").namespace,
-			}));
+			res.locals.oldestActiveNamesDecorated = nameApi.decorateNameRows(global.oldestActiveNames.items);
 		}
 
 		res.render("names");

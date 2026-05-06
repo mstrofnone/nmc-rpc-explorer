@@ -1749,7 +1749,38 @@ function trackAppEvent(name, count=1, params=null) {
 	}
 }
 
+// pMap(items, fn, { concurrency }) — bounded-parallel async .map().
+// Returns the results in INPUT ORDER, regardless of completion order.
+// Errors propagate (the first rejection wins, like Promise.all). Pass
+// reflectPromise as `fn` if you want to continue past per-item failures.
+// Lifted-from-scratch to avoid pulling in `p-map`'s ESM-only versions.
+async function pMap(items, fn, { concurrency = 8 } = {}) {
+	if (!Array.isArray(items)) return [];
+	const out = new Array(items.length);
+	let i = 0;
+	let failed = null;
+	const worker = async () => {
+		while (failed === null) {
+			const idx = i++;
+			if (idx >= items.length) return;
+			try {
+				out[idx] = await fn(items[idx], idx);
+			} catch (e) {
+				if (failed === null) failed = e;
+				return;
+			}
+		}
+	};
+	const n = Math.max(1, Math.min(concurrency | 0, items.length));
+	const workers = [];
+	for (let w = 0; w < n; w++) workers.push(worker());
+	await Promise.all(workers);
+	if (failed) throw failed;
+	return out;
+}
+
 module.exports = {
+	pMap: pMap,
 	reflectPromise: reflectPromise,
 	redirectToConnectPageIfNeeded: redirectToConnectPageIfNeeded,
 	formatHex: formatHex,
