@@ -423,29 +423,44 @@ block content
 	- var __oldestWholeChain = oldestActiveNames && (oldestActiveNames.windowBlocks == null || oldestActiveNames.fromHeight === 0)
 	if (oldestActiveNames && __oldestAA.length)
 		+contentSection("Oldest Active Names")
-			p.text-muted.small.mb-3.
+			p.text-muted.small.mb-3
 				if (__oldestWholeChain)
-					| The oldest names registered (via <code>name_firstupdate</code>) on the entire chain
-					| that are <em>still active</em> right now.
+					| The oldest names registered (via 
+					code name_firstupdate
+					|  ) on the entire chain that are 
+					em still active
+					|  right now.
 				else
-					| Names registered (via <code>name_firstupdate</code>) within the last
-					| <strong>#{oldestActiveNames.windowBlocks.toLocaleString()}</strong>
-					| blocks (~#{Math.round(oldestActiveNames.windowBlocks / 144).toLocaleString()} days at
-					| 10 min/block) that are <em>still active</em> right now.
-				|  Sorted oldest registration first.  Sourced from a background block walk over heights
-				<a href=`./block-height/${oldestActiveNames.fromHeight}`>#{oldestActiveNames.fromHeight.toLocaleString()}</a>
-				&ndash;
-				<a href=`./block-height/${oldestActiveNames.toHeight}`>#{oldestActiveNames.toHeight.toLocaleString()}</a>
-				followed by a per-name <code>name_show</code> active-filter (refreshed every 60 min); the
-				per-name list is capped at
-				<strong>#{__oldestAA.length.toLocaleString()}</strong>
-				entries
+					| Names registered (via 
+					code name_firstupdate
+					|  ) within the last 
+					strong= oldestActiveNames.windowBlocks.toLocaleString()
+					|  blocks (~#{Math.round(oldestActiveNames.windowBlocks / 144).toLocaleString()} days at 10 min/block) that are 
+					em still active
+					|  right now.
+				|  Sorted oldest registration first.  Sourced from a background block walk over heights 
+				a(href=`./block-height/${oldestActiveNames.fromHeight}`)= oldestActiveNames.fromHeight.toLocaleString()
+				| &ndash; 
+				a(href=`./block-height/${oldestActiveNames.toHeight}`)= oldestActiveNames.toHeight.toLocaleString()
+				| , followed by a per-name 
+				code name_show
+				|  active-filter (refreshed every 60 min); the per-name list is capped at 
+				strong= __oldestAA.length.toLocaleString()
+				|  entries
 				if (oldestActiveNames.earlyExit)
 					|  &mdash; scan stopped early after collecting the oldest #{__oldestAA.length.toLocaleString()} still-active firstupdates.
 				else if (oldestActiveNames.totalActive > __oldestAA.length)
-					|  &mdash; <strong>#{oldestActiveNames.totalActive.toLocaleString()}</strong> still-active in total over <strong>#{oldestActiveNames.totalCandidates.toLocaleString()}</strong> firstupdates seen, listing oldest #{__oldestAA.length.toLocaleString()}.
+					|  &mdash; 
+					strong= oldestActiveNames.totalActive.toLocaleString()
+					|  still-active in total over 
+					strong= oldestActiveNames.totalCandidates.toLocaleString()
+					|  firstupdates seen, listing oldest #{__oldestAA.length.toLocaleString()}.
 				else if (typeof oldestActiveNames.totalActive === "number")
-					|  &mdash; <strong>#{oldestActiveNames.totalActive.toLocaleString()}</strong> still-active out of <strong>#{oldestActiveNames.totalCandidates.toLocaleString()}</strong> firstupdates in window.
+					|  &mdash; 
+					strong= oldestActiveNames.totalActive.toLocaleString()
+					|  still-active out of 
+					strong= oldestActiveNames.totalCandidates.toLocaleString()
+					|  firstupdates in window.
 
 			.table-responsive
 				table.table.table-sm.mb-0
@@ -484,18 +499,19 @@ block content
 										code.small= (row.valueRender.display || "").slice(0, 120)
 	else if (oldestActiveNames && oldestActiveNames.totalActive === 0)
 		+contentSection("Oldest Active Names")
-			p.text-muted.small.mb-0.
+			p.text-muted.small.mb-0
 				if (__oldestWholeChain)
-					| No <code>name_firstupdate</code> ops in the chain survived the
-					| active-name filter.  This usually means the node is still
-					| syncing or every name ever registered has since expired.
+					| No 
+					code name_firstupdate
+					|  ops in the chain survived the active-name filter.  This usually means the node is still syncing or every name ever registered has since expired.
 				else
-					| No <code>name_firstupdate</code> ops in the last
-					| <strong>#{oldestActiveNames.windowBlocks.toLocaleString()}</strong>
-					| blocks survived the active-name filter — either the window is
-					| too short, or every name registered in the window has since
-					| expired.  Drop <code>BTCEXP_NAMES_OLDEST_LOOKBACK_BLOCKS</code>
-					| to scan the entire chain.
+					| No 
+					code name_firstupdate
+					|  ops in the last 
+					strong= oldestActiveNames.windowBlocks.toLocaleString()
+					|  blocks survived the active-name filter — either the window is too short, or every name registered in the window has since expired.  Drop 
+					code BTCEXP_NAMES_OLDEST_LOOKBACK_BLOCKS
+					|  to scan the entire chain.
 	else if (oldestActiveNamesPending)
 		+contentSection("Oldest Active Names")
 			p.text-muted.small.mb-0.
