@@ -117,6 +117,9 @@ block content
 
 	- var __previewCount = 10
 
+	- var __expiringSoonRows = expiringSoonDecorated || (namesSummary && namesSummary.expiringSoon) || []
+	- var __recentlyExpiredRows = recentlyExpiredDecorated || (namesSummary && namesSummary.recentlyExpired) || []
+
 	if (namesSummary && namesSummary.expiringSoon && namesSummary.expiringSoon.length)
 		+contentSection("About to expire")
 			p.text-muted.small.mb-3.
@@ -135,8 +138,8 @@ block content
 				else
 					| .
 
-			- var __preview = namesSummary.expiringSoon.slice(0, __previewCount)
-			- var __rest = namesSummary.expiringSoon.length > __previewCount ? namesSummary.expiringSoon.slice(__previewCount) : []
+			- var __preview = __expiringSoonRows.slice(0, __previewCount)
+			- var __rest = __expiringSoonRows.length > __previewCount ? __expiringSoonRows.slice(__previewCount) : []
 
 			.table-responsive
 				table.table.table-sm.mb-0
@@ -146,6 +149,7 @@ block content
 							th NS
 							th Height
 							th Expires in
+							th Value (preview)
 					tbody
 						each row in __preview
 							- var __slash = row.name ? row.name.indexOf("/") : -1
@@ -161,11 +165,16 @@ block content
 										a(href=`./block-height/${row.height}`)= row.height
 								td
 									span.badge.bg-warning.text-dark= `${row.expires_in.toLocaleString()} blocks`
+								td.text-truncate(style="max-width:30rem")
+									if (row.valueRender && row.valueRender.kind === "json")
+										code.small= JSON.stringify(row.valueRender.parsed).slice(0, 120)
+									else if (row.valueRender)
+										code.small= (row.valueRender.display || "").slice(0, 120)
 
 			if (__rest.length)
 				details.mt-2
 					summary.small.text-muted(style="cursor:pointer")
-						| Show remaining #{__rest.length.toLocaleString()} (#{namesSummary.expiringSoon.length.toLocaleString()} loaded total)
+						| Show remaining #{__rest.length.toLocaleString()} (#{__expiringSoonRows.length.toLocaleString()} loaded total)
 					.table-responsive.mt-2
 						table.table.table-sm.mb-0
 							thead
@@ -174,6 +183,7 @@ block content
 									th NS
 									th Height
 									th Expires in
+									th Value (preview)
 							tbody
 								each row in __rest
 									- var __slash = row.name ? row.name.indexOf("/") : -1
@@ -189,6 +199,11 @@ block content
 												a(href=`./block-height/${row.height}`)= row.height
 										td
 											span.badge.bg-warning.text-dark= `${row.expires_in.toLocaleString()} blocks`
+										td.text-truncate(style="max-width:30rem")
+											if (row.valueRender && row.valueRender.kind === "json")
+												code.small= JSON.stringify(row.valueRender.parsed).slice(0, 120)
+											else if (row.valueRender)
+												code.small= (row.valueRender.display || "").slice(0, 120)
 
 	if (namesSummary && namesSummary.recentlyExpired && namesSummary.recentlyExpired.length)
 		+contentSection("Recently expired")
@@ -208,8 +223,8 @@ block content
 				else
 					| .
 
-			- var __previewE = namesSummary.recentlyExpired.slice(0, __previewCount)
-			- var __restE = namesSummary.recentlyExpired.length > __previewCount ? namesSummary.recentlyExpired.slice(__previewCount) : []
+			- var __previewE = __recentlyExpiredRows.slice(0, __previewCount)
+			- var __restE = __recentlyExpiredRows.length > __previewCount ? __recentlyExpiredRows.slice(__previewCount) : []
 
 			.table-responsive
 				table.table.table-sm.mb-0
@@ -219,6 +234,7 @@ block content
 							th NS
 							th Height
 							th Expired
+							th Value (preview)
 					tbody
 						each row in __previewE
 							- var __slash = row.name ? row.name.indexOf("/") : -1
@@ -234,11 +250,16 @@ block content
 										a(href=`./block-height/${row.height}`)= row.height
 								td
 									span.badge.bg-danger= `${Math.abs(row.expires_in).toLocaleString()} blocks ago`
+								td.text-truncate(style="max-width:30rem")
+									if (row.valueRender && row.valueRender.kind === "json")
+										code.small= JSON.stringify(row.valueRender.parsed).slice(0, 120)
+									else if (row.valueRender)
+										code.small= (row.valueRender.display || "").slice(0, 120)
 
 			if (__restE.length)
 				details.mt-2
 					summary.small.text-muted(style="cursor:pointer")
-						| Show remaining #{__restE.length.toLocaleString()} (#{namesSummary.recentlyExpired.length.toLocaleString()} loaded total)
+						| Show remaining #{__restE.length.toLocaleString()} (#{__recentlyExpiredRows.length.toLocaleString()} loaded total)
 					.table-responsive.mt-2
 						table.table.table-sm.mb-0
 							thead
@@ -247,6 +268,7 @@ block content
 									th NS
 									th Height
 									th Expired
+									th Value (preview)
 							tbody
 								each row in __restE
 									- var __slash = row.name ? row.name.indexOf("/") : -1
@@ -262,6 +284,11 @@ block content
 												a(href=`./block-height/${row.height}`)= row.height
 										td
 											span.badge.bg-danger= `${Math.abs(row.expires_in).toLocaleString()} blocks ago`
+										td.text-truncate(style="max-width:30rem")
+											if (row.valueRender && row.valueRender.kind === "json")
+												code.small= JSON.stringify(row.valueRender.parsed).slice(0, 120)
+											else if (row.valueRender)
+												code.small= (row.valueRender.display || "").slice(0, 120)
 
 	else if (namesSummaryPending && !(namesSummary && namesSummary.expiringSoon && namesSummary.expiringSoon.length))
 		+contentSection("About to expire / Recently expired")
@@ -270,3 +297,117 @@ block content
 				the expiring / expired sections will appear here once the first
 				refresh completes (typically within ~30 seconds of explorer
 				boot).
+
+	//- New Names: every `name_firstupdate` op confirmed in the last
+	//- ~2,016 blocks (~2 weeks). firstupdates are the only Namecoin op that
+	//- creates a brand-new on-chain name (a `name_new` only pre-commits a
+	//- salted hash; nothing on the chain references the human-readable name
+	//- until the firstupdate confirms ~12 blocks later), so this list is the
+	//- canonical answer to "which names were registered recently". Same
+	//- 2,016-block window as the expiring / expired sections above so the
+	//- three feed off a shared mental model.
+	- var __recentFU = recentFirstUpdatesDecorated || (recentFirstUpdates && recentFirstUpdates.items) || []
+	if (recentFirstUpdates && __recentFU.length)
+		+contentSection("New Names")
+			p.text-muted.small.mb-3.
+				Names registered (via <code>name_firstupdate</code>) within the last
+				<strong>#{recentFirstUpdates.windowBlocks.toLocaleString()}</strong>
+				blocks (~#{Math.round(recentFirstUpdates.windowBlocks / 144)} days at
+				10 min/block).  Sorted newest-block first.  Sourced from the
+				background block walk (refreshed every 30 min) over heights
+				<a href=`./block-height/${recentFirstUpdates.fromHeight}`>#{recentFirstUpdates.fromHeight.toLocaleString()}</a>
+				&ndash;
+				<a href=`./block-height/${recentFirstUpdates.toHeight}`>#{recentFirstUpdates.toHeight.toLocaleString()}</a>; the
+				per-name list is capped at
+				<strong>#{__recentFU.length.toLocaleString()}</strong>
+				entries
+				if (recentFirstUpdates.total > __recentFU.length)
+					|  &mdash; <strong>#{recentFirstUpdates.total.toLocaleString()}</strong> in total, listing first #{__recentFU.length.toLocaleString()}.
+				else
+					| .
+
+			- var __previewN = __recentFU.slice(0, __previewCount)
+			- var __restN = __recentFU.length > __previewCount ? __recentFU.slice(__previewCount) : []
+
+			.table-responsive
+				table.table.table-sm.mb-0
+					thead
+						tr
+							th Name
+							th NS
+							th Height
+							th Registered
+							th Value (preview)
+					tbody
+						each row in __previewN
+							- var __ns = row.namespace || null
+							- var __blocksAgo = recentFirstUpdates.toHeight - row.height
+							tr
+								td
+									if (row.name)
+										a.font-monospace.small(href=utils.nameUrl(row.name))= row.name
+								td
+									if (__ns)
+										span.badge.bg-secondary= __ns
+								td
+									if (row.height)
+										a(href=`./block-height/${row.height}`)= row.height
+								td
+									span.badge.bg-success= `${__blocksAgo.toLocaleString()} blocks ago`
+								td.text-truncate(style="max-width:30rem")
+									if (row.valueRender && row.valueRender.kind === "json")
+										code.small= JSON.stringify(row.valueRender.parsed).slice(0, 120)
+									else if (row.valueRender)
+										code.small= (row.valueRender.display || "").slice(0, 120)
+
+			if (__restN.length)
+				details.mt-2
+					summary.small.text-muted(style="cursor:pointer")
+						| Show remaining #{__restN.length.toLocaleString()} (#{__recentFU.length.toLocaleString()} loaded total)
+					.table-responsive.mt-2
+						table.table.table-sm.mb-0
+							thead
+								tr
+									th Name
+									th NS
+									th Height
+									th Registered
+									th Value (preview)
+							tbody
+								each row in __restN
+									- var __ns = row.namespace || null
+									- var __blocksAgo = recentFirstUpdates.toHeight - row.height
+									tr
+										td
+											if (row.name)
+												a.font-monospace.small(href=utils.nameUrl(row.name))= row.name
+										td
+											if (__ns)
+												span.badge.bg-secondary= __ns
+										td
+											if (row.height)
+												a(href=`./block-height/${row.height}`)= row.height
+										td
+											span.badge.bg-success= `${__blocksAgo.toLocaleString()} blocks ago`
+										td.text-truncate(style="max-width:30rem")
+											if (row.valueRender && row.valueRender.kind === "json")
+												code.small= JSON.stringify(row.valueRender.parsed).slice(0, 120)
+											else if (row.valueRender)
+												code.small= (row.valueRender.display || "").slice(0, 120)
+	else if (recentFirstUpdates && recentFirstUpdates.total === 0)
+		+contentSection("New Names")
+			p.text-muted.small.mb-0.
+				No <code>name_firstupdate</code> ops confirmed in the last
+				<strong>#{recentFirstUpdates.windowBlocks.toLocaleString()}</strong>
+				blocks (heights
+				<a href=`./block-height/${recentFirstUpdates.fromHeight}`>#{recentFirstUpdates.fromHeight.toLocaleString()}</a>
+				&ndash;
+				<a href=`./block-height/${recentFirstUpdates.toHeight}`>#{recentFirstUpdates.toHeight.toLocaleString()}</a>).
+				New registrations are rare on the current chain &mdash; this list
+				will populate as soon as a fresh <code>name_firstupdate</code> confirms.
+	else if (recentFirstUpdatesPending)
+		+contentSection("New Names")
+			p.text-muted.small.mb-0.
+				The background block walk for new <code>name_firstupdate</code>
+				ops hasn't finished yet &mdash; this section will appear here once
+				the first refresh completes.

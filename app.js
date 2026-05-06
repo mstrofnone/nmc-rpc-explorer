@@ -642,6 +642,15 @@ async function onRpcConnectionVerified(getnetworkinfo, getblockchaininfo) {
 	refreshNamesSummary();
 	setInterval(refreshNamesSummary, 30 * 60 * 1000);
 
+	// Namecoin: walk the last ~2016 blocks and collect every name_firstupdate
+	// op in that window so the /names "New Names" section can render brand-new
+	// registrations alongside the expiring/recently-expired sections (which
+	// already share the same 2016-block window). Block fetches hit the
+	// existing 15-min coreApi blockCache, so the steady-state cost after the
+	// first run is just the new-tip blocks since the previous refresh.
+	refreshRecentFirstUpdates();
+	setInterval(refreshRecentFirstUpdates, 30 * 60 * 1000);
+
 	// Namecoin: walk the last ~24h of blocks and count which transactions
 	// carry name operations vs which are pure currency txs. Same off-the-
 	// request-path pattern; the tx-stats page reads from the cached value.
@@ -873,6 +882,33 @@ async function refreshNamesSummary() {
 		global.namesSummary = null;
 	} finally {
 		global.namesSummaryPending = false;
+	}
+}
+
+async function refreshRecentFirstUpdates() {
+	// Same env-var escape hatch as refreshNamesSummary: operators who don't
+	// want any background name walking can disable both with a single flag.
+	if (process.env.BTCEXP_DISABLE_NAMES_SUMMARY === "true") {
+		debugLog("refreshRecentFirstUpdates disabled via BTCEXP_DISABLE_NAMES_SUMMARY env var");
+		global.recentFirstUpdates = null;
+		return;
+	}
+	global.recentFirstUpdatesPending = true;
+	try {
+		// Window threshold defaults to 2016 blocks (matching the expiry
+		// sections). Operators on a non-mainnet chain (faster blocks) can
+		// override via BTCEXP_NAMES_RECENT_FIRSTUPDATE_BLOCKS without
+		// rebuilding.
+		const opts = {};
+		const win = parseInt(process.env.BTCEXP_NAMES_RECENT_FIRSTUPDATE_BLOCKS, 10);
+		if (Number.isFinite(win) && win > 0) opts.windowBlocks = win;
+		global.recentFirstUpdates = await nameApi.getRecentNameFirstUpdates(opts);
+		debugLog(`Refreshed recent firstupdates: total=${global.recentFirstUpdates.total} listed=${global.recentFirstUpdates.items.length} window=${global.recentFirstUpdates.windowBlocks} elapsedMs=${global.recentFirstUpdates.elapsedMs}`);
+	} catch (e) {
+		debugLog("refreshRecentFirstUpdates error: " + e.message);
+		global.recentFirstUpdates = null;
+	} finally {
+		global.recentFirstUpdatesPending = false;
 	}
 }
 
@@ -1252,6 +1288,8 @@ expressApp.use(function(req, res, next) {
 	res.locals.utxoSetSummaryPending = global.utxoSetSummaryPending;
 	res.locals.namesSummary = global.namesSummary;
 	res.locals.namesSummaryPending = global.namesSummaryPending;
+	res.locals.recentFirstUpdates = global.recentFirstUpdates;
+	res.locals.recentFirstUpdatesPending = global.recentFirstUpdatesPending;
 	res.locals.nameTxStats = global.nameTxStats;
 	res.locals.networkVolume = global.networkVolume;
 	

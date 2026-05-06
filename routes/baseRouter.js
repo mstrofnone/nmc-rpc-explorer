@@ -2812,6 +2812,28 @@ router.get("/names", asyncHandler(async (req, res, next) => {
 		res.locals.nameStart = start;
 		res.locals.nameCount = count;
 
+		// Decorate the background-walk lists (expiringSoon / recentlyExpired /
+		// recent firstupdates) with `valueRender` for the per-row Value
+		// previews. Doing it here — in the request path — keeps the
+		// in-memory summary objects compact (we only persist the raw `value`
+		// + `value_encoding` from name_scan) and lets the JSON parse cost run
+		// only when the page is actually rendered.
+		const _decorate = (entry) => Object.assign({}, entry, {
+			valueRender: nameApi.renderNameValue(entry.value, entry.value_encoding),
+		});
+		if (global.namesSummary && Array.isArray(global.namesSummary.expiringSoon)) {
+			res.locals.expiringSoonDecorated = global.namesSummary.expiringSoon.map(_decorate);
+		}
+		if (global.namesSummary && Array.isArray(global.namesSummary.recentlyExpired)) {
+			res.locals.recentlyExpiredDecorated = global.namesSummary.recentlyExpired.map(_decorate);
+		}
+		if (global.recentFirstUpdates && Array.isArray(global.recentFirstUpdates.items)) {
+			res.locals.recentFirstUpdatesDecorated = global.recentFirstUpdates.items.map((entry) => Object.assign({}, entry, {
+				valueRender: nameApi.renderNameValue(entry.value, entry.value_encoding),
+				namespace: nameApi.splitNamespace(entry.name || "").namespace,
+			}));
+		}
+
 		res.render("names");
 	} catch (err) {
 		utils.logError("namesIndex01", err);

@@ -583,8 +583,8 @@ const FILTER_DESCRIPTIONS = {
 //     active:     <int>,           // total - expired
 //     expired:    <int>,
 //     byNamespace: { d: { total, active, expired }, id: {...}, ... },
-//     expiringSoon:        [ { name, expires_in, height }, ... ],   // sorted closest-to-expiring first, capped
-//     recentlyExpired:     [ { name, expires_in, height }, ... ],   // sorted most-recently-expired first, capped
+//     expiringSoon:        [ { name, expires_in, height, value, value_encoding }, ... ],   // sorted closest-to-expiring first, capped
+//     recentlyExpired:     [ { name, expires_in, height, value, value_encoding }, ... ],   // sorted most-recently-expired first, capped
 //     expiringSoonTotal:   <int>,   // true count before capping
 //     recentlyExpiredTotal:<int>,
 //     expiringSoonBlocks:  <int>,   // window threshold (default 2016 ≈ 2 weeks)
@@ -715,7 +715,9 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 				// Expiry tracking. `expires_in` is in blocks. For active names
 				// it's positive (blocks until expiry); for expired names it's
 				// zero or negative (blocks since expiry). We bucket each row
-				// here and sort/cap after the scan finishes.
+				// here and sort/cap after the scan finishes. We also capture
+				// `value`/`value_encoding` so the UI can render a per-row Value
+				// preview alongside Name/NS/Height/Expires-in.
 				if (typeof row.expires_in === "number") {
 					if (!row.expired && row.expires_in > 0 && row.expires_in <= expiringSoonBlocks) {
 						summary.expiringSoonTotal++;
@@ -723,6 +725,8 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 							name: row.name,
 							expires_in: row.expires_in,
 							height: row.height,
+							value: row.value,
+							value_encoding: row.value_encoding,
 						});
 					} else if (row.expired && row.expires_in <= 0 && row.expires_in >= -recentlyExpiredBlocks) {
 						summary.recentlyExpiredTotal++;
@@ -730,6 +734,8 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 							name: row.name,
 							expires_in: row.expires_in,
 							height: row.height,
+							value: row.value,
+							value_encoding: row.value_encoding,
 						});
 					}
 				}
@@ -850,6 +856,117 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 	return summary;
 }
 
+// ---------------------------------------------------------------------------
+// getRecentNameFirstUpdates({ windowBlocks, listCap, perBlockCap })
+//
+// Walks the last `windowBlocks` blocks (default 2016 ≈ 2 weeks at 10 min/block,
+// matching the expiry windows used elsewhere on /names) and collects every
+// `name_firstupdate` operation found in those blocks. firstupdates are the
+// only op that creates a brand-new name on the chain (a `name_new` only
+// pre-commits a salted hash; the name does not exist on-chain until the
+// firstupdate confirms ~12 blocks later), so this list is the canonical
+// answer to "which names were registered in the last N blocks".
+//
+// Implementation: one `getblock <hash> 2` RPC per block. NMC's getblock
+// verbosity-2 returns fully-decoded transactions WITH their
+// `scriptPubKey.nameOp` payload, so we can extract every name op without a
+// second `getrawtransaction` round-trip. firstupdates are extremely rare on
+// the current chain (often 0-2 per 2016-block window), so the work is
+// dominated by the block fetch itself, not by post-processing. Block results
+// hit the existing 15-minute coreApi blockCache, so a 30-minute refresh that
+// repeats a window only pays the full RPC cost on the first run after each
+// new block confirms.
+//
+// Returns:
+//   {
+//     items: [
+//       { name, value, value_encoding, height, txid, vout, blocktime },
+//       ...
+//     ],   // newest-block-first; capped at listCap
+//     total:        <int>,    // true count before capping
+//     windowBlocks: <int>,    // window threshold actually used
+//     fromHeight:   <int>,    // inclusive
+//     toHeight:     <int>,    // inclusive (chain tip at scan time)
+//     scannedAt:    <ms epoch>,
+//     elapsedMs:    <int>,
+//     truncated:    <bool>,   // listCap hit
+//   }
+// ---------------------------------------------------------------------------
+async function getRecentNameFirstUpdates({ windowBlocks = 2016, listCap = 500, perBlockCap = 5000, coreApi = null } = {}) {
+	// Lazy-require coreApi to dodge the circular import: nameApi is loaded by
+	// coreApi at module-init time, so a top-level `require("./coreApi")` here
+	// would resolve to a half-initialised module and break getBlockByHeight.
+	// Callers can also inject a pre-resolved coreApi for testing.
+	const _coreApi = coreApi || require("./coreApi");
+	const startedAt = Date.now();
+	const tip = await _coreApi.getBlockchainInfo();
+	const toHeight = tip && typeof tip.blocks === "number" ? tip.blocks : null;
+	if (toHeight === null) {
+		return { items: [], total: 0, windowBlocks, fromHeight: null, toHeight: null, scannedAt: Date.now(), elapsedMs: Date.now() - startedAt, truncated: false };
+	}
+	const fromHeight = Math.max(0, toHeight - windowBlocks + 1);
+
+	const items = [];
+	let total = 0;
+	let truncated = false;
+
+	// Walk newest-first so the listCap (when hit) keeps the most-recent
+	// firstupdates rather than the oldest ones in the window.
+	for (let h = toHeight; h >= fromHeight; h--) {
+		let block;
+		try {
+			block = await _coreApi.getBlockByHeight(h);
+		} catch (_e) {
+			continue;
+		}
+		if (!block || !Array.isArray(block.tx)) continue;
+		let perBlock = 0;
+		for (const tx of block.tx) {
+			// `getblock <hash> 2` returns full tx objects on NMC; older or
+			// non-NMC paths may return bare txid strings. We only care about
+			// the verbose form here — bare strings have no nameOp metadata.
+			if (!tx || !Array.isArray(tx.vout)) continue;
+			for (let vi = 0; vi < tx.vout.length; vi++) {
+				const out = tx.vout[vi];
+				const nameOp = out && out.scriptPubKey && out.scriptPubKey.nameOp;
+				if (!nameOp || nameOp.op !== "name_firstupdate") continue;
+				total++;
+				perBlock++;
+				if (perBlock > perBlockCap) {
+					// Defensive: a single block with thousands of firstupdates is
+					// not seen in practice, but cap to keep memory bounded.
+					truncated = true;
+					break;
+				}
+				if (items.length < listCap) {
+					items.push({
+						name: nameOp.name || null,
+						name_encoding: nameOp.name_encoding || null,
+						value: nameOp.value || null,
+						value_encoding: nameOp.value_encoding || null,
+						height: block.height,
+						txid: tx.txid,
+						vout: vi,
+						blocktime: block.time || block.mediantime || null,
+					});
+				} else {
+					truncated = true;
+				}
+			}
+		}
+	}
+	return {
+		items,
+		total,
+		windowBlocks,
+		fromHeight,
+		toHeight,
+		scannedAt: Date.now(),
+		elapsedMs: Date.now() - startedAt,
+		truncated,
+	};
+}
+
 module.exports = {
 	nameShow,
 	nameHistory,
@@ -858,6 +975,7 @@ module.exports = {
 	collectNameOps,
 	renderNameValue,
 	splitNamespace,
+	getRecentNameFirstUpdates,
 	namespaceLabel,
 	parseImports,
 	collectAllImports,
