@@ -1,3 +1,53 @@
+##### nmc-3.6.24
+###### 2026-05-06
+
+**`/name/<n>` history table — lifecycle expansion: stitch in the cycle's `name_firstupdate` and `name_new` ops.**
+
+The `name_history` RPC returns a name's `name_update`s but is missing
+two critical ops at the start of every name's life: the
+`name_firstupdate` (which is returned but mis-labeled — the RPC
+doesn't include the `op` field at all, so the explorer was rendering
+it as `name_update`) and the `name_new` (never returned, since it
+pre-commits a salted hash of (rand + name) and isn't visible by name
+lookup). The chain-walk reconstruction stops at the firstupdate too.
+
+New API: `nameApi.expandNameLifecycle(name, history, { coreApi })`
+takes a name plus its existing history array and stitches in:
+  1. The `name_firstupdate` op (verified via `getrawtransaction` on
+     the oldest known history row to read its actual
+     `scriptPubKey.nameOp.op`, then walked back through the vin chain
+     to the firstupdate when the oldest row is itself a
+     `name_update`).
+  2. The `name_new` pre-commit, found by following the firstupdate's
+     vin chain one step back to the `name_new` op output.
+
+Returns ops oldest-first with kind set to `name_new` /
+`name_firstupdate` / `name_update`, plus `cycleStartedAtNew` /
+`cycleStartedAtFirstupdate` / `ageBlocks` so the view can label the
+registration cycle.
+
+View changes (`views/name.pug`):
+- New "Current registration cycle" info banner above the History
+  table, surfacing the firstupdate height (linked to the block-height
+  page), the `name_new` height, the gap in blocks, and a clear note
+  that prior expired-then-re-registered cycles are NOT shown here —
+  exactly because `name_history` and the chain-walk both stop at
+  the start of the current cycle. A fresh `name_new + name_firstupdate`
+  pair is the on-chain signature of either a brand-new registration
+  or a re-registration after a prior cycle expired.
+- Lifecycle-expansion badge added next to the existing source method
+  badge (`name_history RPC` / `chain-walk reconstruction`).
+- New `name_new` / `name_firstupdate` op badges (info-cyan and
+  success-green respectively) with hover tooltips explaining each
+  op's role in the protocol.
+- `name_new` rows render `(pre-commit) hash: <salted-hash>` instead
+  of the empty value cell (since `name_new` has no value, only a
+  salted commitment hash).
+- Graceful warning surfaced when the lifecycle walk fails (e.g.
+  upstream node has `-txindex` disabled or relevant txs are pruned).
+
+---
+
 ##### nmc-3.6.23
 ###### 2026-05-06
 

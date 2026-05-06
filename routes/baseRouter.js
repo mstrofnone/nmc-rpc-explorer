@@ -2957,6 +2957,34 @@ router.get(/^\/name\/(.+)$/, asyncHandler(async (req, res, next) => {
 			}));
 		}
 
+		// Lifecycle expansion: take the (possibly partial) history and stitch
+		// in the underlying `name_firstupdate` and `name_new` ops so the page
+		// shows the complete CURRENT-CYCLE op chain. `name_history` RPC omits
+		// both the firstupdate's op label AND the name_new entirely; the
+		// chain-walk reconstruction stops at the firstupdate too. We resolve
+		// both via tx-walking (one or two `getrawtransaction` calls each, all
+		// 15-min cached). Failures (txindex disabled, pruned txs) are caught
+		// inside the function and surface as `warnings` so the view can
+		// disclose the gap.
+		res.locals.nameLifecycle = null;
+		if (Array.isArray(res.locals.nameHistory) && res.locals.nameHistory.length) {
+			try {
+				res.locals.nameLifecycle = await nameApi.expandNameLifecycle(rawName, res.locals.nameHistory, { coreApi });
+				// Stamp ageBlocks once we have the tip height — used for the
+				// "Cycle started ~X days ago" label in the view.
+				try {
+					const tipInfo = await coreApi.getBlockchainInfo();
+					const tip = tipInfo && typeof tipInfo.blocks === "number" ? tipInfo.blocks : null;
+					if (tip != null && res.locals.nameLifecycle && res.locals.nameLifecycle.cycleStartedAtFirstupdate != null) {
+						res.locals.nameLifecycle.ageBlocks = tip - res.locals.nameLifecycle.cycleStartedAtFirstupdate;
+						res.locals.nameLifecycle.tipHeight = tip;
+					}
+				} catch (_e) { /* leave ageBlocks null */ }
+			} catch (e) {
+				res.locals.nameLifecycle = { ops: [], cycleStartedAtNew: null, cycleStartedAtFirstupdate: null, ageBlocks: null, warnings: [`lifecycle expansion failed: ${e.message || e}`], elapsedMs: 0 };
+			}
+		}
+
 		res.render("name");
 	} catch (err) {
 		// Build a rich diagnostic for the lookup-failed page so the user can

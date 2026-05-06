@@ -322,8 +322,10 @@ block content
 												else
 													span.text-muted —
 
+		- var __ops = (nameLifecycle && Array.isArray(nameLifecycle.ops) && nameLifecycle.ops.length) ? nameLifecycle.ops : null
+		- var __opCount = __ops ? __ops.length : (nameHistory ? nameHistory.length : 0)
 		if (nameHistory && nameHistory.length)
-			+contentSection(`History (${nameHistory.length})`)
+			+contentSection(`History (${__opCount})`)
 				.d-flex.flex-wrap.align-items-center.gap-2.mb-3
 					span.text-muted.small Method:
 					if (nameHistorySource === "name_history")
@@ -332,13 +334,53 @@ block content
 						span.badge.bg-warning.text-dark(title="Server has -namehistory disabled. Reconstructed locally by walking the chain of name UTXOs backwards from name_show.") chain-walk reconstruction
 					else
 						span.badge.bg-secondary unknown
+					if (__ops)
+						span.text-muted.small + lifecycle expansion
+						span.badge.bg-info.text-dark(title="The current cycle's name_firstupdate and name_new ops were stitched in by walking the firstupdate's input chain (one or two getrawtransaction calls each).") name_firstupdate + name_new
 					a.small.text-decoration-none.ms-1(href="./docs/name-history", title="How does the explorer build name history?") learn more
 
 				p.text-muted.small.mb-3.
 					Full operational chain of this name from
-					<code>name_firstupdate</code> through every <code>name_update</code>
-					up to the current state.  Sorted newest-first; each entry is the
-					latest at the time of that block.
+					<code>name_new</code> &rarr; <code>name_firstupdate</code> through
+					every <code>name_update</code> up to the current state.  Sorted
+					newest-first; each entry is the latest at the time of that block.
+
+				//- Cycle banner: surface the registration height + age, and warn
+				//- the user that this represents the *current* cycle only.
+				if (nameLifecycle && nameLifecycle.cycleStartedAtFirstupdate != null)
+					.alert.alert-info.small.mb-3
+						strong Current registration cycle.&nbsp;
+						| This cycle's <code>name_firstupdate</code> confirmed at height
+						a(href=`./block-height/${nameLifecycle.cycleStartedAtFirstupdate}`).ms-1= nameLifecycle.cycleStartedAtFirstupdate.toLocaleString()
+						if (typeof nameLifecycle.ageBlocks === "number" && nameLifecycle.ageBlocks >= 0)
+							- var __daysAgo = Math.round(nameLifecycle.ageBlocks / 144)
+							|  &mdash; about <strong>#{__daysAgo.toLocaleString()}</strong> day#{__daysAgo === 1 ? "" : "s"} ago
+							|  (#{nameLifecycle.ageBlocks.toLocaleString()} blocks at 10&nbsp;min/block).
+						else
+							| .
+						if (nameLifecycle.cycleStartedAtNew != null)
+							- var __gap = nameLifecycle.cycleStartedAtFirstupdate - nameLifecycle.cycleStartedAtNew
+							| &nbsp;The matching <code>name_new</code> pre-commit was at height
+							a(href=`./block-height/${nameLifecycle.cycleStartedAtNew}`).ms-1= nameLifecycle.cycleStartedAtNew.toLocaleString()
+							if (__gap >= 0)
+								|  (#{__gap.toLocaleString()} blocks earlier).
+							else
+								| .
+						div.mt-1.text-muted
+							em Note:&nbsp;
+							| if this name was registered before, expired, and was later re-registered,
+							|  those <strong>prior cycles aren't shown here</strong> &mdash; the
+							| <code>name_history</code> RPC and the chain-walk reconstruction both
+							|  stop at the start of the current cycle.  A fresh
+							| <code>name_new</code> + <code>name_firstupdate</code> here is the
+							|  signature of either a brand-new registration or a re-registration
+							|  after a prior cycle expired.
+				else if (nameLifecycle && nameLifecycle.warnings && nameLifecycle.warnings.length)
+					.alert.alert-warning.small.mb-3
+						strong Lifecycle expansion incomplete:
+						ul.mb-0.mt-1
+							each w in nameLifecycle.warnings
+								li= w
 
 				if (nameHistorySource === "name_history")
 					p.text-muted.small.mb-3.
@@ -367,6 +409,7 @@ block content
 							each w in nameHistoryWarnings
 								li= w
 
+				- var __rows = __ops ? __ops.slice().reverse() : nameHistory.slice().reverse()
 				.table-responsive
 					table.table.table-sm.mb-0
 						thead
@@ -377,7 +420,7 @@ block content
 								th Value
 								th(style="width:18rem") Tx
 						tbody
-							each entry in nameHistory.slice().reverse()
+							each entry in __rows
 								- var __valStr = (entry.value == null ? "" : String(entry.value))
 								- var __valTrim = __valStr.trim()
 								- var __valIsJson = (__valTrim.startsWith("{") || __valTrim.startsWith("["))
@@ -386,8 +429,9 @@ block content
 									- try { __valParsed = JSON.parse(__valTrim); } catch (_e) { __valParsed = null; }
 								- var __valPretty = __valParsed ? JSON.stringify(__valParsed, null, 2) : __valStr
 								- var __valPreview = __valStr.length > 240 ? (__valStr.slice(0, 240) + "…") : __valStr
-								- var __opLabel = entry.op || "name_update"
-								- var __opBadge = (__opLabel === "name_firstupdate" ? "bg-success" : (__opLabel === "name_new" ? "bg-secondary" : "bg-primary"))
+								- var __opLabel = entry.kind || entry.op || "name_update"
+								- var __opBadge = (__opLabel === "name_firstupdate" ? "bg-success" : (__opLabel === "name_new" ? "bg-info text-dark" : "bg-primary"))
+								- var __opTitle = (__opLabel === "name_new" ? "Pre-commit of a salted hash of (rand + name). Reveals nothing about the name; the human-readable name only appears on chain when the matching name_firstupdate confirms ~12+ blocks later." : (__opLabel === "name_firstupdate" ? "Reveals (rand + name + value), proving the earlier name_new committed to this exact name." : (__opLabel === "name_update" ? "Updates the value and resets the 36,000-block expiry counter." : null)))
 								tr
 									td
 										if (entry.height != null && entry.height >= 0)
@@ -400,9 +444,16 @@ block content
 										else
 											span.text-muted —
 									td
-										span.badge(class=__opBadge)= __opLabel
+										span.badge(class=__opBadge, title=__opTitle)= __opLabel
 									td
-										if (__valStr.length === 0)
+										if (__opLabel === "name_new")
+											//- name_new ops have no value; they commit to a salted hash.
+											span.text-muted.small.
+												<em>(pre-commit)</em>&mdash;
+											if (entry.hash)
+												|  hash:
+												code.font-monospace.small.ms-1= entry.hash
+										else if (__valStr.length === 0)
 											span.text-muted.small (empty)
 										else if (__valStr.length <= 240 && !__valIsJson)
 											code.font-monospace.small(style="white-space:pre-wrap; word-break:break-all")= __valStr

@@ -1276,6 +1276,243 @@ async function getOldestActiveNames({ windowBlocks = 52560, listCap = 50, perBlo
 	};
 }
 
+// ---------------------------------------------------------------------------
+// expandNameLifecycle(name, history, { coreApi })
+//
+// Given a `name` and the `history` array we already have for it (from either
+// the `name_history` RPC or from `reconstructNameHistory`), produce the FULL
+// CURRENT-CYCLE op chain by filling in the two ops that `name_history`
+// always omits:
+//
+//   1. The cycle's `name_firstupdate` (when history's oldest row is a
+//      `name_update`, or when the row has no `op` field at all — namecoind's
+//      `name_history` RPC notoriously omits the `op` field, so a chain that
+//      starts with a single bare row is *typically* the firstupdate, but we
+//      verify by tx-walking).
+//
+//   2. The cycle's `name_new` — always missing from `name_history`. The
+//      `name_new` op pre-commits a salted hash of the name (rand + name)
+//      ~12+ blocks before the firstupdate that reveals it. There's no way
+//      to find it by name (the op carries no name field, only the hash);
+//      the only path is to follow the firstupdate's vin chain.
+//
+// Output is a CURRENT-CYCLE-ONLY chain; expired prior cycles (where this
+// name was registered, expired, and re-registered later) are not surfaced
+// here — finding them requires a brute-force block scan that is too
+// expensive at request time. The returned `cycleStartedAtNew` /
+// `cycleStartedAtFirstupdate` heights let the caller signal "this is the
+// start of the *current* cycle, prior cycles may exist on chain" in the UI.
+//
+// Returns:
+//   {
+//     ops: [    // current-cycle ops, oldest-first; ops[0] is name_new
+//       { kind: "name_new",         txid, vout, height, blocktime, hash, rand },
+//       { kind: "name_firstupdate", txid, vout, height, blocktime, value, value_encoding, rand, hash },
+//       { kind: "name_update",      txid, vout, height, blocktime, value, value_encoding },
+//       ...
+//     ],
+//     cycleStartedAtNew:         <height of name_new, or null if not found>,
+//     cycleStartedAtFirstupdate: <height of firstupdate, or null if not found>,
+//     ageBlocks:                 <toHeight - cycleStartedAtFirstupdate, when both known>,
+//     warnings:                  [<string>, ...],
+//     elapsedMs:                 <int>,
+//   }
+// ---------------------------------------------------------------------------
+async function expandNameLifecycle(name, history, { coreApi = null } = {}) {
+	const _coreApi = coreApi || require("./coreApi");
+	const startedAt = Date.now();
+	const warnings = [];
+
+	if (!Array.isArray(history) || history.length === 0) {
+		return { ops: [], cycleStartedAtNew: null, cycleStartedAtFirstupdate: null, ageBlocks: null, warnings: ["empty history; cannot expand"], elapsedMs: Date.now() - startedAt };
+	}
+
+	// Sort entries by height ascending so ops[0] is the oldest known row in
+	// the cycle. We don't mutate the caller's array.
+	const sorted = history.slice().filter(e => e && typeof e.txid === "string").sort((a, b) => {
+		const ha = typeof a.height === "number" ? a.height : Number.POSITIVE_INFINITY;
+		const hb = typeof b.height === "number" ? b.height : Number.POSITIVE_INFINITY;
+		return ha - hb;
+	});
+	if (sorted.length === 0) {
+		return { ops: [], cycleStartedAtNew: null, cycleStartedAtFirstupdate: null, ageBlocks: null, warnings: ["history has no usable entries"], elapsedMs: Date.now() - startedAt };
+	}
+
+	// Phase 1: identify (or discover) the cycle's name_firstupdate.
+	//
+	// `name_history` rows DON'T include the `op` field, so we can't trust
+	// `entry.op` to tell us what the oldest row is. Resolve via raw tx:
+	// fetch the oldest row's tx, look at its vouts[].scriptPubKey.nameOp.op.
+	let firstupdateOp = null;
+	const oldest = sorted[0];
+	try {
+		const oldestTx = await _coreApi.getRawTransaction(oldest.txid);
+		const oldestNop = (oldestTx && Array.isArray(oldestTx.vout))
+			? oldestTx.vout.map((v, i) => ({ vi: i, nop: v && v.scriptPubKey && v.scriptPubKey.nameOp }))
+				.find(x => x.nop && x.nop.name === name)
+			: null;
+		if (oldestNop && oldestNop.nop.op === "name_firstupdate") {
+			// The oldest history row IS the firstupdate; build the op record
+			// from this tx so we capture rand/hash etc.
+			let height = typeof oldest.height === "number" ? oldest.height : null;
+			if (height == null && oldestTx.blockhash) {
+				try {
+					const hdr = await _coreApi.getBlockHeaderByHash(oldestTx.blockhash);
+					if (hdr && typeof hdr.height === "number") height = hdr.height;
+				} catch (_e) { /* ignore */ }
+			}
+			firstupdateOp = {
+				kind: "name_firstupdate",
+				txid: oldest.txid,
+				vout: oldestNop.vi,
+				height,
+				blocktime: oldestTx.blocktime || oldestTx.time || oldest.blocktime || null,
+				value: oldestNop.nop.value != null ? oldestNop.nop.value : (oldest.value != null ? oldest.value : null),
+				value_encoding: oldestNop.nop.value_encoding || oldest.value_encoding || null,
+				rand: oldestNop.nop.rand || null,
+				hash: oldestNop.nop.hash || null,
+				_isExistingHistoryRow: true,
+			};
+		} else if (oldestNop && oldestNop.nop.op === "name_update") {
+			// The history starts mid-cycle (name_history RPC is fine; chain-walk
+			// reconstruction stops at firstupdate so this branch is mostly the
+			// name_history path). Walk back through vin chain to find the
+			// firstupdate.
+			let curTxid = oldest.txid;
+			let curBlockhash = oldestTx.blockhash || null;
+			let curTx = oldestTx;
+			let steps = 0;
+			const maxSteps = 5000;
+			while (curTx && steps < maxSteps) {
+				steps++;
+				let foundPrev = null;
+				for (const vin of (curTx.vin || [])) {
+					if (!vin || !vin.txid || typeof vin.vout !== "number") continue;
+					let prevTx;
+					try { prevTx = await _coreApi.getRawTransaction(vin.txid); } catch (_e) { continue; }
+					if (!prevTx || !Array.isArray(prevTx.vout)) continue;
+					const prevNop = prevTx.vout[vin.vout] && prevTx.vout[vin.vout].scriptPubKey && prevTx.vout[vin.vout].scriptPubKey.nameOp;
+					if (prevNop && prevNop.name === name && (prevNop.op === "name_update" || prevNop.op === "name_firstupdate")) {
+						foundPrev = { txid: vin.txid, vout: vin.vout, tx: prevTx, nop: prevNop };
+						break;
+					}
+				}
+				if (!foundPrev) {
+					warnings.push(`could not walk back from ${curTxid} to firstupdate (txindex disabled or pruned?)`);
+					break;
+				}
+				if (foundPrev.nop.op === "name_firstupdate") {
+					let height = null;
+					if (foundPrev.tx.blockhash) {
+						try {
+							const hdr = await _coreApi.getBlockHeaderByHash(foundPrev.tx.blockhash);
+							if (hdr && typeof hdr.height === "number") height = hdr.height;
+						} catch (_e) { /* ignore */ }
+					}
+					firstupdateOp = {
+						kind: "name_firstupdate",
+						txid: foundPrev.txid,
+						vout: foundPrev.vout,
+						height,
+						blocktime: foundPrev.tx.blocktime || foundPrev.tx.time || null,
+						value: foundPrev.nop.value != null ? foundPrev.nop.value : null,
+						value_encoding: foundPrev.nop.value_encoding || null,
+						rand: foundPrev.nop.rand || null,
+						hash: foundPrev.nop.hash || null,
+						_isExistingHistoryRow: false,
+					};
+					curTx = foundPrev.tx;
+					curTxid = foundPrev.txid;
+					break;
+				}
+				curTxid = foundPrev.txid;
+				curTx = foundPrev.tx;
+			}
+		} else {
+			warnings.push(`oldest history tx ${oldest.txid} carries no recognised name_firstupdate / name_update op for ${name}`);
+		}
+	} catch (e) {
+		warnings.push(`getrawtransaction ${oldest.txid} failed: ${e.message || e}`);
+	}
+
+	// Phase 2: from the firstupdate, follow vin to find the matching name_new.
+	let newOp = null;
+	if (firstupdateOp && firstupdateOp.txid) {
+		try {
+			const firstupdateTx = await _coreApi.getRawTransaction(firstupdateOp.txid);
+			if (firstupdateTx && Array.isArray(firstupdateTx.vin)) {
+				for (const vin of firstupdateTx.vin) {
+					if (!vin || !vin.txid || typeof vin.vout !== "number") continue;
+					let prevTx;
+					try { prevTx = await _coreApi.getRawTransaction(vin.txid); } catch (_e) { continue; }
+					if (!prevTx || !Array.isArray(prevTx.vout)) continue;
+					const prevNop = prevTx.vout[vin.vout] && prevTx.vout[vin.vout].scriptPubKey && prevTx.vout[vin.vout].scriptPubKey.nameOp;
+					if (prevNop && prevNop.op === "name_new") {
+						let newHeight = null;
+						if (prevTx.blockhash) {
+							try {
+								const hdr = await _coreApi.getBlockHeaderByHash(prevTx.blockhash);
+								if (hdr && typeof hdr.height === "number") newHeight = hdr.height;
+							} catch (_e) { /* ignore */ }
+						}
+						newOp = {
+							kind: "name_new",
+							txid: vin.txid,
+							vout: vin.vout,
+							height: newHeight,
+							blocktime: prevTx.blocktime || prevTx.time || null,
+							hash: prevNop.hash || null,
+							rand: prevNop.rand || null,
+						};
+						break;
+					}
+				}
+				if (!newOp) warnings.push(`firstupdate tx ${firstupdateOp.txid} has no vin pointing at a name_new (txindex disabled or pruned?)`);
+			}
+		} catch (e) {
+			warnings.push(`getrawtransaction ${firstupdateOp.txid} failed: ${e.message || e}`);
+		}
+	}
+
+	// Phase 3: stitch together the final ops list:
+	//   [ name_new (if found), name_firstupdate (if found), then every history
+	//     row above the firstupdate, oldest-first ]
+	// History rows already include the firstupdate's row when name_history
+	// returned only one entry (the firstupdate itself); we de-dup by txid.
+	const seen = new Set();
+	const ops = [];
+	if (newOp) {
+		ops.push(newOp);
+		seen.add(newOp.txid);
+	}
+	if (firstupdateOp) {
+		ops.push(firstupdateOp);
+		seen.add(firstupdateOp.txid);
+	}
+	for (const row of sorted) {
+		if (seen.has(row.txid)) continue;
+		ops.push({
+			kind: "name_update",
+			txid: row.txid,
+			vout: typeof row.vout === "number" ? row.vout : null,
+			height: typeof row.height === "number" ? row.height : null,
+			blocktime: row.blocktime || null,
+			value: row.value != null ? row.value : null,
+			value_encoding: row.value_encoding || null,
+		});
+		seen.add(row.txid);
+	}
+
+	return {
+		ops,
+		cycleStartedAtNew: newOp && typeof newOp.height === "number" ? newOp.height : null,
+		cycleStartedAtFirstupdate: firstupdateOp && typeof firstupdateOp.height === "number" ? firstupdateOp.height : null,
+		ageBlocks: null,   // caller stamps this in once tip is known
+		warnings,
+		elapsedMs: Date.now() - startedAt,
+	};
+}
+
 module.exports = {
 	nameShow,
 	nameHistory,
@@ -1287,6 +1524,7 @@ module.exports = {
 	getRecentNameFirstUpdates,
 	getOldestActiveNames,
 	reconstructNameHistory,
+	expandNameLifecycle,
 	namespaceLabel,
 	parseImports,
 	collectAllImports,

@@ -1,6 +1,6 @@
 {
 	"name": "nmc-rpc-explorer",
-	"version": "3.6.23",
+	"version": "3.6.24",
 	"description": "Open-source, self-hosted Namecoin/Bitcoin explorer (fork of btc-rpc-explorer)",
 	"private": false,
 	"bin": "bin/cli.js",
