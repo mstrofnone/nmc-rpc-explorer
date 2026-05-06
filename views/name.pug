@@ -7,10 +7,134 @@ block content
 	+pageTitle(`Name: ${nameQuery}`)
 
 	if (nameLookupError)
-		.alert.alert-warning
-			h5.mb-2 Name lookup failed
-			div.mb-2 No record was returned for #[code= nameQuery].
-			div.text-muted.small.font-monospace #{nameLookupError}
+		- var __dx = nameLookupDiagnosis || { interpretation: "other", primaryRpc: { method: "name_show", params: [nameQuery, { allowExpired: true }], code: null, message: nameLookupError }, nodeStatus: null, mempoolHit: null, prefixHits: [] }
+		- var __interp = __dx.interpretation
+		- var __alertClass = __interp === "node_syncing" ? "alert-info" : (__interp === "bad_param" ? "alert-danger" : "alert-warning")
+
+		.alert(class=__alertClass)
+			case __interp
+				when "never_existed"
+					h5.mb-2 No such name on chain
+					div.mb-2.
+						No Namecoin record exists for #[code= nameQuery].  This means
+						the name has never been registered — there is no
+						<code>name_firstupdate</code> for this exact byte sequence in the
+						chain index.
+				when "expired"
+					h5.mb-2 Name has expired (and the node refused to return it)
+					div.mb-2.
+						#[code= nameQuery] was registered at some point but has since
+						expired.  The explorer normally passes <code>allowExpired: true</code>
+						to <code>name_show</code> so expired names still render, but the
+						node rejected this request anyway.  Most often this means the node
+						is on an old <code>namecoin-core</code> build that doesn't accept
+						the option, or the chain index is mid-rebuild.
+				when "node_syncing"
+					h5.mb-2 Node is still syncing or reindexing
+					div.mb-2.
+						The upstream Namecoin Core node is not yet ready to serve name
+						lookups.  This is normal during initial block download or while
+						a <code>-reindex</code> is in progress — the chain state and
+						name index are still being rebuilt.  Try again once the node
+						reaches the chain tip.
+				when "bad_param"
+					h5.mb-2 Invalid name argument
+					div.mb-2.
+						The node rejected #[code= nameQuery] as a name_show argument.
+						Namecoin names are arbitrary byte sequences (so leading whitespace
+						and other unusual characters are valid), but a few inputs cannot
+						be parsed at all — e.g. invalid UTF-8 when an ASCII encoding was
+						requested.
+				default
+					h5.mb-2 Name lookup failed
+					div.mb-2 No record was returned for #[code= nameQuery].
+
+			hr.my-3
+			div.small.fw-bold.mb-1 How this was determined
+			div.small.mb-2.
+				The explorer asked the upstream Namecoin Core node for this name
+				and the node returned a JSON-RPC error.  All of the steps below ran
+				against the same node that powers the rest of this site.
+
+			dl.row.small.mb-2(style="row-gap:0.4rem")
+				dt.col-sm-3.text-muted RPC call
+				dd.col-sm-9
+					code= __dx.primaryRpc.method + "(" + JSON.stringify(__dx.primaryRpc.params) + ")"
+				dt.col-sm-3.text-muted Error code
+				dd.col-sm-9
+					if (__dx.primaryRpc.code != null)
+						code= __dx.primaryRpc.code
+						span.text-muted.ms-2.
+							(JSON-RPC error code returned by namecoind)
+					else
+						span.text-muted (none — this is a non-RPC error path)
+				dt.col-sm-3.text-muted Error message
+				dd.col-sm-9
+					code.font-monospace.small= __dx.primaryRpc.message
+
+			if (__dx.nodeStatus)
+				div.small.mb-2.
+					<strong>Node status:</strong>
+					height #{__dx.nodeStatus.blocks.toLocaleString()} of
+					#{__dx.nodeStatus.headers.toLocaleString()}
+					if (__dx.nodeStatus.initialblockdownload)
+						|  &mdash; <em>still syncing</em> (verification
+						#{(__dx.nodeStatus.verificationprogress * 100).toFixed(2)}%)
+					else
+						|  &mdash; chain tip reached.
+
+			if (__dx.mempoolHit && __dx.mempoolHit.length)
+				div.alert.alert-success.small.mb-2
+					strong Pending in mempool!
+					|  This name has
+					|  #{__dx.mempoolHit.length}
+					|  unconfirmed name op#{__dx.mempoolHit.length === 1 ? "" : "s"} waiting in the mempool. The page will start showing real data as soon as one of them confirms.
+					ul.mb-0.mt-1
+						each m in __dx.mempoolHit
+							li
+								span.font-monospace.small= m.op || "name_op"
+								|  &middot;
+								a.font-monospace.small.ms-1(href=`./tx/${m.txid}`)= m.txid.slice(0, 16) + "…"
+
+			if (__dx.prefixHits && __dx.prefixHits.length)
+				div.small.mb-2
+					div.fw-bold.mb-1 Did you mean one of these?
+					div.text-muted.small.mb-1.
+						These are the next few names that exist in the chain index when
+						sorted byte-wise from #[code= nameQuery].
+					ul.mb-0.font-monospace
+						each h in __dx.prefixHits
+							li
+								a(href=utils.nameUrl(h.name))= h.name
+								if (h.expired)
+									span.badge.bg-danger.ms-2 Expired
+								span.text-muted.ms-2.small @#{h.height}
+
+			if (__interp === "never_existed")
+				details.small.mt-3
+					summary.text-muted(style="cursor:pointer") What does "never existed" mean exactly?
+					div.mt-2.
+						Namecoin Core's <code>name_show</code> RPC returns error
+						<code>-4 "name never existed"</code> when no
+						<code>name_firstupdate</code> for this exact byte sequence has
+						ever confirmed on the chain.  A <code>name_new</code> alone is
+						<em>not</em> sufficient to create a name on chain — it only
+						pre-commits a salted hash; the name itself does not exist until
+						the matching <code>name_firstupdate</code> confirms ~12 blocks
+						later.  So if all you've seen for this name is a
+						<code>name_new</code> tx, that's why it doesn't show up here.
+						Note also: the namespace prefix matters.  <code>apple</code>,
+						<code>d/apple</code>, and <code>id/apple</code> are three
+						distinct names on chain; only the ones whose firstupdate has
+						confirmed are returned.
+			if (__interp === "node_syncing")
+				details.small.mt-3
+					summary.text-muted(style="cursor:pointer") When will this work?
+					div.mt-2.
+						Name lookups will resume as soon as the node reaches the chain
+						tip.  The node's <code>getblockchaininfo</code> reports it is
+						currently in initial block download or reindex mode.  This page
+						doesn't auto-refresh; reload it once the chain tip is reached.
 	else
 		+contentSection("Summary")
 			.row.g-3

@@ -2935,8 +2935,99 @@ router.get(/^\/name\/(.+)$/, asyncHandler(async (req, res, next) => {
 
 		res.render("name");
 	} catch (err) {
-		res.locals.nameQuery = decodeURIComponent(req.params[0]);
+		// Build a rich diagnostic for the lookup-failed page so the user can
+		// see exactly *how* we determined the name doesn't exist (or can't be
+		// shown right now): the RPC call we made, the error code/message the
+		// node returned, plus secondary checks for the mempool and any
+		// near-prefix match in name_scan.
+		const rawName = decodeURIComponent(req.params[0]);
+		res.locals.nameQuery = rawName;
 		res.locals.nameLookupError = err.message || String(err);
+
+		const diagnosis = {
+			query: rawName,
+			primaryRpc: {
+				method: err.rpcMethod || "name_show",
+				params: err.rpcParameters || [rawName, { allowExpired: true }],
+				code: typeof err.code === "number" ? err.code : null,
+				message: err.message || String(err),
+			},
+			interpretation: null,
+			nodeStatus: null,
+			mempoolHit: null,
+			prefixHits: [],
+		};
+
+		// Plain-English interpretation of the most common namecoind error
+		// codes returned by `name_show`. The text shown to the user lives in
+		// the view; here we just classify so the view can pick the right
+		// explanation block and show actionable next steps.
+		const msg = (err.message || "").toLowerCase();
+		if (typeof err.code === "number" && err.code === -4 && msg.includes("never existed")) {
+			diagnosis.interpretation = "never_existed";
+		} else if (typeof err.code === "number" && err.code === -4 && msg.includes("expired")) {
+			// With allowExpired:true on by default this branch should be rare
+			// (it would mean the node refused even with the flag). Worth
+			// surfacing distinctly anyway.
+			diagnosis.interpretation = "expired";
+		} else if (typeof err.code === "number" && err.code === -10) {
+			diagnosis.interpretation = "node_syncing";
+		} else if (typeof err.code === "number" && err.code === -8) {
+			diagnosis.interpretation = "bad_param";
+		} else {
+			diagnosis.interpretation = "other";
+		}
+
+		// Secondary check 1: is the node actually able to answer right now?
+		// Fast call (cached) so we don't pile latency on the error page.
+		try {
+			const info = await coreApi.getBlockchainInfo();
+			if (info) {
+				diagnosis.nodeStatus = {
+					blocks: info.blocks,
+					headers: info.headers,
+					initialblockdownload: !!info.initialblockdownload,
+					verificationprogress: info.verificationprogress,
+				};
+			}
+		} catch (_e) { /* leave nodeStatus null */ }
+
+		// Secondary check 2: is a `name_firstupdate` for this exact name
+		// currently sitting in the mempool? If yes, the name is in flight —
+		// the explorer would show it as soon as the firstupdate confirms.
+		try {
+			const pending = await nameApi.namePending(rawName);
+			if (Array.isArray(pending) && pending.length) {
+				diagnosis.mempoolHit = pending.map((p) => ({
+					op: p.op || null,
+					txid: p.txid || null,
+					vout: typeof p.vout === "number" ? p.vout : null,
+				}));
+			}
+		} catch (_e) { /* name_pending sometimes rejects the per-name arg on older nodes; harmless */ }
+
+		// Secondary check 3: a tight `name_scan` window starting at the
+		// query, returning up to 5 hits. Useful for typo/case mismatches
+		// (e.g. someone typed `apple` and the actual name is `d/apple`).
+		// We only run this when the primary error was "never_existed" so
+		// the page doesn't get noisy on syncing/auth errors.
+		if (diagnosis.interpretation === "never_existed") {
+			try {
+				const rows = await nameApi.nameScan(rawName, 5);
+				if (Array.isArray(rows)) {
+					diagnosis.prefixHits = rows
+						.filter((r) => r && typeof r.name === "string" && r.name !== rawName)
+						.slice(0, 5)
+						.map((r) => ({
+							name: r.name,
+							height: r.height,
+							expired: !!r.expired,
+						}));
+				}
+			} catch (_e) { /* harmless */ }
+		}
+
+		res.locals.nameLookupDiagnosis = diagnosis;
 		res.render("name");
 	}
 
