@@ -472,6 +472,17 @@ function loadChangelog() {
 			global.apiChangelogMarkdown = data;
 		}
 	});
+
+	// Operator/user-facing doc: explains how the /name/<n> page builds
+	// name history (name_history RPC vs chain-walk reconstruction). Loaded
+	// once at boot and rendered by the /docs/name-history route.
+	fs.readFile(path.join(__dirname, "docs", "name-history.md"), 'utf8', function(err, data) {
+		if (err) {
+			utils.logError("loadNameHistoryDoc", err);
+		} else {
+			global.nameHistoryDocMarkdown = data;
+		}
+	});
 }
 
 function loadHistoricalDataForChain(chain) {

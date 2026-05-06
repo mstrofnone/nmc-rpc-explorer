@@ -200,6 +200,16 @@ block content
 
 		if (nameHistory && nameHistory.length)
 			+contentSection(`History (${nameHistory.length})`)
+				.d-flex.flex-wrap.align-items-center.gap-2.mb-3
+					span.text-muted.small Method:
+					if (nameHistorySource === "name_history")
+						span.badge.bg-success(title="Server has -namehistory enabled and returned the full chain via the name_history RPC.") name_history RPC
+					else if (nameHistorySource === "reconstructed")
+						span.badge.bg-warning.text-dark(title="Server has -namehistory disabled. Reconstructed locally by walking the chain of name UTXOs backwards from name_show.") chain-walk reconstruction
+					else
+						span.badge.bg-secondary unknown
+					a.small.text-decoration-none.ms-1(href="./docs/name-history", title="How does the explorer build name history?") learn more
+
 				p.text-muted.small.mb-3.
 					Full operational chain of this name from
 					<code>name_firstupdate</code> through every <code>name_update</code>
@@ -208,16 +218,23 @@ block content
 
 				if (nameHistorySource === "name_history")
 					p.text-muted.small.mb-3.
-						Sourced directly from the upstream node's
-						<code>name_history</code> RPC
-						(requires <code>-namehistory</code>).
+						Sourced directly from the upstream Namecoin Core node's
+						<code>name_history</code> RPC, which requires the daemon
+						to be started with <code>-namehistory=1</code>.  This is the
+						cheapest path: the node already has the full operational
+						chain indexed, so the entire history is returned in a single
+						RPC call.
 				else if (nameHistorySource === "reconstructed")
 					p.text-muted.small.mb-3.
-						Reconstructed by walking the chain of name UTXOs backwards
-						from <code>name_show</code> (the upstream node has
-						<code>-namehistory</code> disabled, so we follow each
-						<code>name_update</code> tx's input back to the previous
-						name output until <code>name_firstupdate</code>).
+						The upstream Namecoin Core node does not have
+						<code>-namehistory</code> enabled, so the explorer reconstructed
+						this history client-side by walking the chain of name UTXOs
+						backwards from <code>name_show</code>: starting at the current
+						tip, each <code>name_update</code> tx is fetched via
+						<code>getrawtransaction</code> (requires <code>-txindex</code>),
+						its one name-carrying input is identified, and the walk
+						repeats on that prevout until <code>name_firstupdate</code>
+						is reached.
 
 				if (nameHistoryWarnings && nameHistoryWarnings.length)
 					.alert.alert-warning.small.mb-3

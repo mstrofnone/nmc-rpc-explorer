@@ -1,0 +1,24 @@
+extends layout
+
+block headContent
+	title #{docTitle || "Documentation"}
+
+	style.
+		.doc-body h1, .doc-body h2, .doc-body h3 { font-weight: 300; }
+		.doc-body h1 { font-size: 1.75rem; margin-bottom: 1rem; }
+		.doc-body h2 { font-size: 1.4rem; margin-top: 2rem; margin-bottom: 0.75rem; }
+		.doc-body h3 { font-size: 1.15rem; margin-top: 1.5rem; margin-bottom: 0.5rem; }
+		.doc-body table { width: auto; max-width: 100%; }
+		.doc-body table th, .doc-body table td { padding: 0.4rem 0.75rem; border: 1px solid var(--bs-border-color); font-size: 0.9rem; }
+		.doc-body table th { background: var(--bs-tertiary-bg); }
+		.doc-body code { background: var(--bs-tertiary-bg); padding: 0.1rem 0.35rem; border-radius: 0.2rem; font-size: 0.9em; }
+		.doc-body pre { background: var(--bs-tertiary-bg); padding: 0.75rem 1rem; border-radius: 0.4rem; overflow-x: auto; }
+		.doc-body pre code { background: transparent; padding: 0; }
+		.doc-body blockquote { border-left: 0.25rem solid var(--bs-border-color); padding: 0.4rem 1rem; color: var(--bs-secondary-color); }
+
+block content
+	+pageTitle(docTitle || "Documentation")
+
+	+contentSection
+		.doc-body
+			| !{docHtml}

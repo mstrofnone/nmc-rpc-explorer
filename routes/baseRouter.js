@@ -2369,6 +2369,18 @@ router.get("/changelog", function(req, res, next) {
 	next();
 });
 
+// Operator/user-facing doc explaining the two methods the explorer uses to
+// build name history on /name/<n> (name_history RPC vs chain-walk
+// reconstruction). Linked from a "learn more" hint on the /name/<n> page.
+router.get("/docs/name-history", function(req, res, next) {
+	const src = global.nameHistoryDocMarkdown || "# Name history\n\nDocumentation not loaded.";
+	res.locals.docTitle = "Name history";
+	res.locals.docHtml = markdown.render(src);
+	res.render("doc");
+
+	next();
+});
+
 router.get("/fun", function(req, res, next) {
 	let viewType = "new-first";
 	if (req.query.viewType) {
