@@ -1,3 +1,35 @@
+##### nmc-3.6.28
+###### 2026-05-16
+
+**Coin-aware `metaTitle` on `/address/<addr>` and `/tx/<txid>` pages.**
+
+The last two routes still hardcoded `Bitcoin` in `metaTitle`, which is what
+`views/layout.pug` renders into `<meta property="og:title">` and
+`<meta property="twitter:title">`. On a Namecoin Core deployment the
+social preview cards for a tx or address were rendering as Bitcoin
+artifacts. Both lines now use `${coinConfig.name}` for consistency with
+the block routes (`baseRouter.js:1161, 1268, 1272`).
+
+**Operator note: address balances + tx history via local ElectrumX.**
+
+`/address/<addr>` was rendering as "No address API is configured."
+because `btc-rpc-explorer` is DB-free and needs an external address-API
+backend to enumerate scripthash history. Wire it to a local
+ElectrumX-Namecoin server (e.g. the one already running on the box that
+feeds the relay TLSA verifier) by setting in `.env`:
+
+    BTCEXP_ADDRESS_API=electrumx
+    BTCEXP_ELECTRUM_SERVERS=tcp://127.0.0.1:50001
+
+No code changes are needed for this — the `electrumAddressApi` and
+`/address/:address` route handler have been in the codebase since
+upstream. Documented here because every fresh deployment of
+`nmc-rpc-explorer` hits the same dead end if no address API is wired,
+and a same-host ElectrumX-Namecoin is the lowest-friction option for
+Namecoin Core operators.
+
+---
+
 ##### nmc-3.6.27
 ###### 2026-05-07
 
