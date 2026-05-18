@@ -1,3 +1,28 @@
+##### nmc-3.6.29
+###### 2026-05-18
+
+**`/name/<name>` Value section: `Rendered` vs `Raw JSON` tabs.**
+
+The Value section used to render a single view of the name's value:
+pretty-printed JSON when the value parsed as JSON, otherwise plain text
+or hex. There was no way to see the *literal* `value` field as
+`name_show` returned it — useful for byte-level inspection, copy-paste
+verification against the chain, and confirming the explorer's
+pretty-printer hasn't reshaped the data.
+
+Wrap the existing rendered view in a Bootstrap nav-pills tab group and
+add a second `Raw JSON` tab that shows `nameInfo.value` verbatim,
+labelled with the `value_encoding` reported by the node. The existing
+Rendered tab keeps the JSON / text / hex branching and is the
+default-active tab, so the user-facing default is unchanged. The tab
+group is only emitted when the name has a non-empty value; empty
+values continue to render as the existing `Empty value` line.
+
+One file (`views/name.pug`), +28/-12. No JS / CSS / asset changes (so
+no SRI regeneration is required), no route or RPC changes.
+
+---
+
 ##### nmc-3.6.28
 ###### 2026-05-16
 
