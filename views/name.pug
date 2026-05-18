@@ -198,18 +198,34 @@ block content
 								code= entry.value
 
 		+contentSection("Value")
-			if (valueRender.kind === "json")
-				div.text-muted.small.mb-2 Decoded as JSON
-				pre.bg-body-tertiary.p-3.rounded-1.small.mb-0
-					code= valueRender.display
-			else if (valueRender.kind === "text")
-				div.text-muted.small.mb-2 #{nameInfo.value_encoding === "ascii" ? "ASCII" : "Text"}
-				pre.bg-body-tertiary.p-3.rounded-1.small.mb-0
-					code= valueRender.display
-			else if (valueRender.kind === "hex")
-				div.text-muted.small.mb-2 Hex (binary value)
-				pre.bg-body-tertiary.p-3.rounded-1.small.mb-0.text-break
-					code= valueRender.display
+			- var __hasValue = (valueRender.kind !== "empty")
+			if (__hasValue)
+				ul.nav.nav-pills.mb-3(role="tablist")
+					li.nav-item
+						a.nav-link.active(data-bs-toggle="tab", href="#tab-value-rendered", role="tab") Rendered
+					li.nav-item
+						a.nav-link(data-bs-toggle="tab", href="#tab-value-raw", role="tab") Raw JSON
+				div.tab-content
+					div.tab-pane.active(id="tab-value-rendered", role="tabpanel")
+						if (valueRender.kind === "json")
+							div.text-muted.small.mb-2 Decoded as JSON
+							pre.bg-body-tertiary.p-3.rounded-1.small.mb-0
+								code= valueRender.display
+						else if (valueRender.kind === "text")
+							div.text-muted.small.mb-2 #{nameInfo.value_encoding === "ascii" ? "ASCII" : "Text"}
+							pre.bg-body-tertiary.p-3.rounded-1.small.mb-0
+								code= valueRender.display
+						else if (valueRender.kind === "hex")
+							div.text-muted.small.mb-2 Hex (binary value)
+							pre.bg-body-tertiary.p-3.rounded-1.small.mb-0.text-break
+								code= valueRender.display
+					div.tab-pane(id="tab-value-raw", role="tabpanel")
+						div.text-muted.small.mb-2.
+							Raw <code>value</code> field as returned by
+							<code>name_show</code>
+							(encoding: <code>#{nameInfo.value_encoding || "utf8"}</code>).
+						pre.bg-body-tertiary.p-3.rounded-1.small.mb-0.text-break(style="max-height: 32rem; overflow: auto;")
+							code= (nameInfo.value == null ? "" : String(nameInfo.value))
 			else
 				div.text-muted Empty value
 
