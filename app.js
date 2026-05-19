@@ -264,9 +264,16 @@ const sessionConfig = {
 	}
 };
 
-if (config.secureSite) {
-	expressApp.set('trust proxy', 1);
-}
+// Always trust the loopback proxy so `req.ip` reflects the real client IP
+// when Apache/nginx forwards via 127.0.0.1 with X-Forwarded-For. Without
+// this, express-rate-limit (and any per-IP logic) lumps every reverse-
+// proxied request into a single 127.0.0.1 bucket, so one scanner hitting
+// /.env / /.aws/credentials / etc. exhausts the global window and every
+// legitimate user starts seeing "Too many requests". 'loopback' is safe
+// regardless of secureSite: only the literal 127.0.0.0/8 + ::1 hop is
+// trusted, so X-Forwarded-For headers from real external clients are
+// still ignored as spoofable.
+expressApp.set('trust proxy', 'loopback');
 
 // Helpful reference for production: nginx HTTPS proxy:
 // https://gist.github.com/nikmartin/5902176

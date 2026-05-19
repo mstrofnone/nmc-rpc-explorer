@@ -1,3 +1,36 @@
+##### nmc-3.6.30
+###### 2026-05-19
+
+**Trust the loopback proxy so per-IP rate limiting works behind Apache.**
+
+When the explorer is fronted by Apache (or any reverse proxy on the
+same host, e.g. `explore.testls.bit` -> `127.0.0.1:3002`), Express
+was seeing every request as coming from `127.0.0.1` because
+`app.set('trust proxy', ...)` was gated on `BTCEXP_SECURE_SITE=true`.
+The `secureSite` flag also flips `cookie.secure = true`, which would
+break the plain-HTTP `:3002` endpoint that some operators still expose
+alongside the HTTPS reverse proxy, so simply turning `secureSite` on
+is not a clean fix.
+
+Result: `express-rate-limit` lumped every Apache-proxied request into
+a single shared `127.0.0.1` bucket. One scanner hitting paths like
+`/.env`, `/.aws/credentials`, `/.ssh/id_ecdsa` would exhaust the
+200-req/15min window and every legitimate user behind the proxy would
+start seeing `429 Too many requests, please try again later` until the
+window reset.
+
+Fix: always `app.set('trust proxy', 'loopback')`, independent of
+`secureSite`. The `loopback` value only trusts the literal
+`127.0.0.0/8` + `::1` hop, so `X-Forwarded-For` from real external
+clients (which terminate at the public socket on `:3002`, not
+`127.0.0.1`) remains correctly ignored as spoofable. The cookie-secure
+flag stays gated on `secureSite` as before.
+
+One file (`app.js`), +10/-3. No CSS / JS / asset changes, no SRI
+regeneration needed, no route or RPC changes.
+
+---
+
 ##### nmc-3.6.29
 ###### 2026-05-18
 
