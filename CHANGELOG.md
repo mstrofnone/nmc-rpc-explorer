@@ -1,12 +1,22 @@
 ##### nmc-3.6.31
 ###### 2026-05-29
 
-**`Onion-Location` header support.**
+**`Onion-Location` support: HTTP header + HTML `<meta>` fallback.**
 
 New `BTCEXP_ONION_LOCATION` env var. When set to a full `http(s)://...onion`
-URL, every clearnet response carries an `Onion-Location: <value>` header.
-Tor Browser surfaces this as a purple ".onion available" pill in the URL
-bar and offers a one-click switch to the onion mirror.
+URL, every clearnet response carries an `Onion-Location: <value>` header AND
+an equivalent `<meta http-equiv="onion-location" content="<value>">` tag in
+the HTML `<head>` (Tor Browser proposal 100 §2.3 fallback that survives
+header-stripping proxies).
+
+Tor Browser surfaces either signal as a purple ".onion available" pill in
+the URL bar and offers a one-click switch to the onion mirror.
+
+**Important:** per Tor Browser proposal 100 §2.2, the pill ONLY renders when
+the defining page is served over HTTPS. Plain `http://` pages serve the
+header/meta tag correctly but Tor Browser ignores it by spec. For the pill
+to appear, terminate TLS in front of the explorer (Apache TLSA-pinned vhost,
+Caddy, Let's Encrypt, etc.) and visit the HTTPS URL.
 
 The value is validated at boot (must look like `http(s)://<host>.onion[:port][/path]`);
 invalid values are logged and ignored rather than served. The header is

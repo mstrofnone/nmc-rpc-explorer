@@ -54,6 +54,13 @@ html(lang="en")
 		meta(name="msapplication-config", content=`./img/network-${network}/browserconfig.xml`)
 		meta(name="theme-color" content="#022e70")
 
+		// Onion-Location HTML <meta> fallback (Tor Browser proposal 100 §2.3).
+		// Equivalent to the Onion-Location HTTP header set in app.js. Tor Browser
+		// applies the same HTTPS-required gating, but the meta tag survives proxies
+		// that strip unknown response headers.
+		if config.onionLocation
+			meta(http-equiv="onion-location" content=config.onionLocation)
+
 		include includes/debug-overrides.pug
 
 		block headContent
