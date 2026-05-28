@@ -1,3 +1,22 @@
+##### nmc-3.6.31
+###### 2026-05-29
+
+**`Onion-Location` header support.**
+
+New `BTCEXP_ONION_LOCATION` env var. When set to a full `http(s)://...onion`
+URL, every clearnet response carries an `Onion-Location: <value>` header.
+Tor Browser surfaces this as a purple ".onion available" pill in the URL
+bar and offers a one-click switch to the onion mirror.
+
+The value is validated at boot (must look like `http(s)://<host>.onion[:port][/path]`);
+invalid values are logged and ignored rather than served. The header is
+suppressed on requests whose `Host` already ends in `.onion`, so onion
+visitors never see a self-pointing header.
+
+No behavioural change when `BTCEXP_ONION_LOCATION` is unset.
+
+---
+
 ##### nmc-3.6.30
 ###### 2026-05-19
 

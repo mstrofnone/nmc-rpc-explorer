@@ -275,6 +275,28 @@ const sessionConfig = {
 // still ignored as spoofable.
 expressApp.set('trust proxy', 'loopback');
 
+// Onion-Location header: advertise this explorer's Tor onion mirror
+// (Tor Browser shows the purple ".onion available" pill in the URL bar
+// and offers a one-click switch). Validated at boot, applied per-request.
+// Skipped when the request itself is already on an .onion host so onion
+// visitors don't get a self-pointing header.
+if (config.onionLocation) {
+	const onionLocationRaw = String(config.onionLocation).trim();
+	const onionLocationOk = /^https?:\/\/[^\s"<>]+\.onion(:\d+)?(\/[^\s"<>]*)?$/i.test(onionLocationRaw);
+	if (!onionLocationOk) {
+		debugLog(`BTCEXP_ONION_LOCATION value rejected (must be http(s)://...onion[:port][/path]): ${onionLocationRaw}`);
+	} else {
+		debugLog(`Onion-Location header active: ${onionLocationRaw}`);
+		expressApp.use((req, res, next) => {
+			if (req.hostname && req.hostname.toLowerCase().endsWith(".onion")) {
+				return next();
+			}
+			res.setHeader("Onion-Location", onionLocationRaw);
+			next();
+		});
+	}
+}
+
 // Helpful reference for production: nginx HTTPS proxy:
 // https://gist.github.com/nikmartin/5902176
 debugLog(`Session config: ${JSON.stringify(utils.obfuscateProperties(sessionConfig, ["secret"]))}`);

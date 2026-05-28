@@ -129,6 +129,15 @@ module.exports = {
 		windowMaxRequests: process.env.BTCEXP_RATE_LIMIT_WINDOW_MAX_REQUESTS || 200
 	},
 
+	// Onion-Location header (Tor Browser ".onion available" pill).
+	// Set BTCEXP_ONION_LOCATION to the full onion URL of this explorer,
+	// e.g. http://abc...xyz.onion:8080/ -- Tor Browser will then show the
+	// purple ".onion available" suggestion in the URL bar on clearnet
+	// visits and offer a one-click switch to the onion mirror.
+	// Header is only emitted on responses to non-.onion requests, so onion
+	// visitors never see a self-pointing Onion-Location.
+	onionLocation: process.env.BTCEXP_ONION_LOCATION || null,
+
 	rpcBlacklist:
 		process.env.BTCEXP_RPC_ALLOWALL.toLowerCase() == "true"  ? []
 		: process.env.BTCEXP_RPC_BLACKLIST ? process.env.BTCEXP_RPC_BLACKLIST.split(',').filter(Boolean)
