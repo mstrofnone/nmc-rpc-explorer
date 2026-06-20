@@ -1,3 +1,51 @@
+##### nmc-3.6.32
+###### 2026-06-21
+
+**`/name/<n>` history now surfaces every prior registration cycle.**
+
+The `name_history` RPC returns every value snapshot the daemon ever saw for
+a given name with no `op` field, which means a name that was registered,
+expired, re-registered, expired again, ... looks like one long
+chain of `name_update`s when you read it naively.
+
+We were doing exactly that for the prior cycle ops: every row past the
+current cycle's `name_firstupdate` got rendered with a `name_update` badge,
+even the historical `name_firstupdate`s that opened the older cycles. The
+worst case was a name like `d/morty`, where the history table showed a
+single `name_update` at block 263,769 and then jumped straight to another
+`name_update` at block 709,932 — 446,163 blocks apart for a `d/` name with
+a 36,000-block expiry window. The two ops are actually on *different*
+registration cycles; the 709,932 op is a `name_firstupdate` opening a fresh
+cycle after the 2015 cycle expired.
+
+`expandNameLifecycle` now:
+
+  - scans the sorted history for `(h[i] - h[i-1]) > 36000`-block gaps (a
+    name MUST have expired in between, so the later row HAS to be a
+    `name_firstupdate`),
+  - tx-verifies each boundary candidate (`getrawtransaction`) and only
+    promotes it to `name_firstupdate` when the on-chain op actually matches
+    (silent fallback to `name_update` + warning when it doesn't),
+  - walks each confirmed `name_firstupdate`'s vin to inject the matching
+    `name_new` pre-commit, just like we already do for the current cycle,
+  - stamps every op with its `cycleIndex` (0 = oldest) and returns a new
+    `cycles[]` array so the view can render per-cycle metadata.
+
+The `/name/<n>` table now:
+
+  - shows every cycle's `name_new` + `name_firstupdate` with the correct
+    badge colours (info / success),
+  - draws a visible "↓ Earlier cycle (N of M)" divider between cycles,
+    annotated with the block at which the prior cycle's name UTXO expired
+    (last-op-height + 36,000) so visitors can verify the gap is genuine,
+  - upgrades the "Current registration cycle" banner with a "Prior cycles:
+    re-registered N times before the current cycle" line when N > 0.
+
+Affects `name_history`-sourced histories only. The `reconstructNameHistory`
+fallback (used on nodes without `-namehistory`) naturally stops at the
+current cycle's `name_firstupdate` because it walks the UTXO chain, so it's
+not affected by this bug.
+
 ##### nmc-3.6.31
 ###### 2026-05-29
 

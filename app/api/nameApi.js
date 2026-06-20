@@ -1371,43 +1371,69 @@ async function getOldestActiveNames({ windowBlocks = null, fromHeight: fromHeigh
 }
 
 // ---------------------------------------------------------------------------
+// Namecoin mainnet expiration window for name UTXOs. After block 48000 every
+// name expires `NAME_EXPIRATION_DEPTH` blocks after its last name op (see
+// `src/consensus/params.h` `MainNetConsensus::NameExpirationDepth`). We use
+// this as a *lower bound* heuristic for cycle-boundary detection in name
+// history: if two consecutive history rows are more than this many blocks
+// apart, the name MUST have expired in between and been re-registered, so
+// the later row is necessarily a `name_firstupdate` opening a new cycle.
+//
+// (Early-chain names with 12000-block expiry don't matter here: by block
+// 48000 the depth is already pegged at 36000, and any history row above
+// 48000 with a >36000-block gap from its predecessor is unambiguously
+// post-expiration. We tx-verify anyway so the heuristic only triggers when
+// the on-chain op is genuinely `name_firstupdate`.)
+// ---------------------------------------------------------------------------
+const NAME_EXPIRATION_DEPTH = 36000;
+
+// ---------------------------------------------------------------------------
 // expandNameLifecycle(name, history, { coreApi })
 //
 // Given a `name` and the `history` array we already have for it (from either
 // the `name_history` RPC or from `reconstructNameHistory`), produce the FULL
-// CURRENT-CYCLE op chain by filling in the two ops that `name_history`
-// always omits:
+// op chain across EVERY registration cycle by filling in the two ops that
+// `name_history` always omits:
 //
-//   1. The cycle's `name_firstupdate` (when history's oldest row is a
-//      `name_update`, or when the row has no `op` field at all — namecoind's
-//      `name_history` RPC notoriously omits the `op` field, so a chain that
-//      starts with a single bare row is *typically* the firstupdate, but we
-//      verify by tx-walking).
+//   1. Each cycle's `name_firstupdate`. `name_history` returns the value
+//      *snapshot* at every name op but flags none of them — every entry
+//      looks like a `name_update` from the outside. We tx-verify the
+//      oldest row plus every row that opens a fresh cycle (gap >
+//      NAME_EXPIRATION_DEPTH from its predecessor) and re-label them as
+//      `name_firstupdate` when the on-chain op confirms it.
 //
-//   2. The cycle's `name_new` — always missing from `name_history`. The
-//      `name_new` op pre-commits a salted hash of the name (rand + name)
-//      ~12+ blocks before the firstupdate that reveals it. There's no way
-//      to find it by name (the op carries no name field, only the hash);
-//      the only path is to follow the firstupdate's vin chain.
+//   2. Each cycle's `name_new`. `name_new` pre-commits a salted hash of the
+//      name (rand + name) ~12+ blocks before its matching firstupdate
+//      reveals it. The op carries no name field, only the hash; the only
+//      reliable way to find it is to follow the firstupdate's vin chain.
 //
-// Output is a CURRENT-CYCLE-ONLY chain; expired prior cycles (where this
-// name was registered, expired, and re-registered later) are not surfaced
-// here — finding them requires a brute-force block scan that is too
-// expensive at request time. The returned `cycleStartedAtNew` /
-// `cycleStartedAtFirstupdate` heights let the caller signal "this is the
-// start of the *current* cycle, prior cycles may exist on chain" in the UI.
+// This means a name that was registered, expired, re-registered, expired
+// again, ... gets its FULL multi-cycle history rendered, with each cycle's
+// pre-commit + reveal explicitly labelled and the gap to the next cycle
+// shown as a visible discontinuity. Only the very first cycle's `name_new`
+// can be missed (when the firstupdate's input is a prevout we can no longer
+// resolve — txindex disabled or pruned — for example because we're walking
+// back into very-early chain history).
 //
 // Returns:
 //   {
-//     ops: [    // current-cycle ops, oldest-first; ops[0] is name_new
-//       { kind: "name_new",         txid, vout, height, blocktime, hash, rand },
-//       { kind: "name_firstupdate", txid, vout, height, blocktime, value, value_encoding, rand, hash },
-//       { kind: "name_update",      txid, vout, height, blocktime, value, value_encoding },
+//     ops: [    // oldest-first; each op carries `cycleIndex` (0 = oldest)
+//       { kind: "name_new",         txid, vout, height, blocktime, hash, rand, cycleIndex },
+//       { kind: "name_firstupdate", txid, vout, height, blocktime, value, value_encoding, rand, hash, cycleIndex },
+//       { kind: "name_update",      txid, vout, height, blocktime, value, value_encoding, cycleIndex },
 //       ...
 //     ],
-//     cycleStartedAtNew:         <height of name_new, or null if not found>,
-//     cycleStartedAtFirstupdate: <height of firstupdate, or null if not found>,
-//     ageBlocks:                 <toHeight - cycleStartedAtFirstupdate, when both known>,
+//     cycles: [    // oldest-first, one per detected registration cycle
+//       { cycleIndex, startedAtNew, startedAtFirstupdate, lastOpHeight,
+//         hasPriorExpiration, priorCycleLastOpHeight,
+//         priorCycleExpiredAt },
+//       ...
+//     ],
+//     // Legacy fields — refer to the CURRENT (latest) cycle for backward
+//     // compatibility with templates/callers that only knew about one cycle:
+//     cycleStartedAtNew:         <height of latest cycle's name_new, or null>,
+//     cycleStartedAtFirstupdate: <height of latest cycle's firstupdate, or null>,
+//     ageBlocks:                 <tipHeight - cycleStartedAtFirstupdate, caller-stamped>,
 //     warnings:                  [<string>, ...],
 //     elapsedMs:                 <int>,
 //   }
@@ -1418,189 +1444,307 @@ async function expandNameLifecycle(name, history, { coreApi = null } = {}) {
 	const warnings = [];
 
 	if (!Array.isArray(history) || history.length === 0) {
-		return { ops: [], cycleStartedAtNew: null, cycleStartedAtFirstupdate: null, ageBlocks: null, warnings: ["empty history; cannot expand"], elapsedMs: Date.now() - startedAt };
+		return { ops: [], cycles: [], cycleStartedAtNew: null, cycleStartedAtFirstupdate: null, ageBlocks: null, warnings: ["empty history; cannot expand"], elapsedMs: Date.now() - startedAt };
 	}
 
-	// Sort entries by height ascending so ops[0] is the oldest known row in
-	// the cycle. We don't mutate the caller's array.
+	// Sort entries by height ascending so sorted[0] is the oldest known row.
+	// We don't mutate the caller's array.
 	const sorted = history.slice().filter(e => e && typeof e.txid === "string").sort((a, b) => {
 		const ha = typeof a.height === "number" ? a.height : Number.POSITIVE_INFINITY;
 		const hb = typeof b.height === "number" ? b.height : Number.POSITIVE_INFINITY;
 		return ha - hb;
 	});
 	if (sorted.length === 0) {
-		return { ops: [], cycleStartedAtNew: null, cycleStartedAtFirstupdate: null, ageBlocks: null, warnings: ["history has no usable entries"], elapsedMs: Date.now() - startedAt };
+		return { ops: [], cycles: [], cycleStartedAtNew: null, cycleStartedAtFirstupdate: null, ageBlocks: null, warnings: ["history has no usable entries"], elapsedMs: Date.now() - startedAt };
 	}
 
-	// Phase 1: identify (or discover) the cycle's name_firstupdate.
+	// ---------------------------------------------------------------------
+	// Phase 0: identify cycle-boundary candidates.
 	//
-	// `name_history` rows DON'T include the `op` field, so we can't trust
-	// `entry.op` to tell us what the oldest row is. Resolve via raw tx:
-	// fetch the oldest row's tx, look at its vouts[].scriptPubKey.nameOp.op.
-	let firstupdateOp = null;
-	const oldest = sorted[0];
-	try {
-		const oldestTx = await _coreApi.getRawTransaction(oldest.txid);
-		const oldestNop = (oldestTx && Array.isArray(oldestTx.vout))
-			? oldestTx.vout.map((v, i) => ({ vi: i, nop: v && v.scriptPubKey && v.scriptPubKey.nameOp }))
-				.find(x => x.nop && x.nop.name === name)
-			: null;
-		if (oldestNop && oldestNop.nop.op === "name_firstupdate") {
-			// The oldest history row IS the firstupdate; build the op record
-			// from this tx so we capture rand/hash etc.
-			let height = typeof oldest.height === "number" ? oldest.height : null;
-			if (height == null && oldestTx.blockhash) {
-				try {
-					const hdr = await _coreApi.getBlockHeaderByHash(oldestTx.blockhash);
-					if (hdr && typeof hdr.height === "number") height = hdr.height;
-				} catch (_e) { /* ignore */ }
+	// `name_history` returns every value snapshot for the name with no `op`
+	// field, so we can't trust the rows' apparent labels. Candidates for
+	// fresh-cycle openers are:
+	//   - row 0 (always; we have to figure out whether it's a firstupdate
+	//     or a mid-cycle update),
+	//   - any row whose height jumped more than NAME_EXPIRATION_DEPTH blocks
+	//     past its predecessor (the name MUST have expired in between, so
+	//     the later row HAS to be a fresh `name_firstupdate`).
+	//
+	// We tx-verify each candidate. When the on-chain op is genuinely
+	// `name_firstupdate`, we open a new cycle at that row and walk its vin
+	// to inject the matching `name_new`.
+	// ---------------------------------------------------------------------
+	const boundaryIdx = [0];
+	for (let i = 1; i < sorted.length; i++) {
+		const h0 = sorted[i - 1].height;
+		const h1 = sorted[i].height;
+		if (typeof h0 === "number" && typeof h1 === "number" && (h1 - h0) > NAME_EXPIRATION_DEPTH) {
+			boundaryIdx.push(i);
+		}
+	}
+
+	// ---------------------------------------------------------------------
+	// Helpers shared by every cycle opener.
+	// ---------------------------------------------------------------------
+	async function fetchNameOp(txid) {
+		let tx;
+		try { tx = await _coreApi.getRawTransaction(txid); }
+		catch (e) { warnings.push(`getrawtransaction ${txid} failed: ${e.message || e}`); return null; }
+		if (!tx || !Array.isArray(tx.vout)) return null;
+		let vi = -1, nop = null;
+		for (let i = 0; i < tx.vout.length; i++) {
+			const candidate = tx.vout[i] && tx.vout[i].scriptPubKey && tx.vout[i].scriptPubKey.nameOp;
+			if (candidate && candidate.name === name) { vi = i; nop = candidate; break; }
+		}
+		let height = null;
+		if (tx.blockhash) {
+			try {
+				const hdr = await _coreApi.getBlockHeaderByHash(tx.blockhash);
+				if (hdr && typeof hdr.height === "number") height = hdr.height;
+			} catch (_e) { /* ignore */ }
+		}
+		return { tx, vi, nop, height, blockhash: tx.blockhash || null, blocktime: tx.blocktime || tx.time || null };
+	}
+
+	async function findNameNewForFirstupdate(firstupdateTxid) {
+		let firstupdateTx;
+		try { firstupdateTx = await _coreApi.getRawTransaction(firstupdateTxid); }
+		catch (e) { warnings.push(`getrawtransaction ${firstupdateTxid} failed: ${e.message || e}`); return null; }
+		if (!firstupdateTx || !Array.isArray(firstupdateTx.vin)) return null;
+		for (const vin of firstupdateTx.vin) {
+			if (!vin || !vin.txid || typeof vin.vout !== "number") continue;
+			let prevTx;
+			try { prevTx = await _coreApi.getRawTransaction(vin.txid); } catch (_e) { continue; }
+			if (!prevTx || !Array.isArray(prevTx.vout)) continue;
+			const prevNop = prevTx.vout[vin.vout] && prevTx.vout[vin.vout].scriptPubKey && prevTx.vout[vin.vout].scriptPubKey.nameOp;
+			if (prevNop && prevNop.op === "name_new") {
+				let height = null;
+				if (prevTx.blockhash) {
+					try {
+						const hdr = await _coreApi.getBlockHeaderByHash(prevTx.blockhash);
+						if (hdr && typeof hdr.height === "number") height = hdr.height;
+					} catch (_e) { /* ignore */ }
+				}
+				return {
+					kind: "name_new",
+					txid: vin.txid,
+					vout: vin.vout,
+					height,
+					blocktime: prevTx.blocktime || prevTx.time || null,
+					hash: prevNop.hash || null,
+					rand: prevNop.rand || null,
+				};
 			}
-			firstupdateOp = {
+		}
+		return null;
+	}
+
+	// Walk vin from a confirmed mid-cycle row backwards to its cycle's
+	// `name_firstupdate`. Used only for the oldest row when it's a
+	// `name_update` (i.e. `name_history` returned a row that's NOT a cycle
+	// boundary — happens when -namehistory has been on since chain start).
+	async function walkBackToFirstupdate(startTxid, startTx) {
+		let curTx = startTx;
+		let curTxid = startTxid;
+		const maxSteps = 5000;
+		for (let steps = 0; steps < maxSteps && curTx; steps++) {
+			let foundPrev = null;
+			for (const vin of (curTx.vin || [])) {
+				if (!vin || !vin.txid || typeof vin.vout !== "number") continue;
+				let prevTx;
+				try { prevTx = await _coreApi.getRawTransaction(vin.txid); } catch (_e) { continue; }
+				if (!prevTx || !Array.isArray(prevTx.vout)) continue;
+				const prevNop = prevTx.vout[vin.vout] && prevTx.vout[vin.vout].scriptPubKey && prevTx.vout[vin.vout].scriptPubKey.nameOp;
+				if (prevNop && prevNop.name === name && (prevNop.op === "name_update" || prevNop.op === "name_firstupdate")) {
+					foundPrev = { txid: vin.txid, vout: vin.vout, tx: prevTx, nop: prevNop };
+					break;
+				}
+			}
+			if (!foundPrev) {
+				warnings.push(`could not walk back from ${curTxid} to firstupdate (txindex disabled or pruned?)`);
+				return null;
+			}
+			if (foundPrev.nop.op === "name_firstupdate") {
+				let height = null;
+				if (foundPrev.tx.blockhash) {
+					try {
+						const hdr = await _coreApi.getBlockHeaderByHash(foundPrev.tx.blockhash);
+						if (hdr && typeof hdr.height === "number") height = hdr.height;
+					} catch (_e) { /* ignore */ }
+				}
+				return {
+					kind: "name_firstupdate",
+					txid: foundPrev.txid,
+					vout: foundPrev.vout,
+					height,
+					blocktime: foundPrev.tx.blocktime || foundPrev.tx.time || null,
+					value: foundPrev.nop.value != null ? foundPrev.nop.value : null,
+					value_encoding: foundPrev.nop.value_encoding || null,
+					rand: foundPrev.nop.rand || null,
+					hash: foundPrev.nop.hash || null,
+				};
+			}
+			curTxid = foundPrev.txid;
+			curTx = foundPrev.tx;
+		}
+		return null;
+	}
+
+	// ---------------------------------------------------------------------
+	// Phase 1: classify each boundary candidate, build per-cycle firstupdate
+	// ops, and walk each firstupdate's vin for its matching name_new.
+	// ---------------------------------------------------------------------
+	const cycleOpeners = [];  // [{ boundaryIndex, firstupdateOp, newOp, replaces? }]
+
+	for (let bi = 0; bi < boundaryIdx.length; bi++) {
+		const rowIdx = boundaryIdx[bi];
+		const row = sorted[rowIdx];
+		const rowInfo = await fetchNameOp(row.txid);
+		if (!rowInfo || !rowInfo.nop) {
+			warnings.push(`history row ${row.txid} carries no name op for ${name}`);
+			continue;
+		}
+
+		if (rowInfo.nop.op === "name_firstupdate") {
+			const firstupdateOp = {
 				kind: "name_firstupdate",
-				txid: oldest.txid,
-				vout: oldestNop.vi,
-				height,
-				blocktime: oldestTx.blocktime || oldestTx.time || oldest.blocktime || null,
-				value: oldestNop.nop.value != null ? oldestNop.nop.value : (oldest.value != null ? oldest.value : null),
-				value_encoding: oldestNop.nop.value_encoding || oldest.value_encoding || null,
-				rand: oldestNop.nop.rand || null,
-				hash: oldestNop.nop.hash || null,
-				_isExistingHistoryRow: true,
+				txid: row.txid,
+				vout: rowInfo.vi,
+				height: rowInfo.height != null ? rowInfo.height : (typeof row.height === "number" ? row.height : null),
+				blocktime: rowInfo.blocktime || row.blocktime || null,
+				value: rowInfo.nop.value != null ? rowInfo.nop.value : (row.value != null ? row.value : null),
+				value_encoding: rowInfo.nop.value_encoding || row.value_encoding || null,
+				rand: rowInfo.nop.rand || null,
+				hash: rowInfo.nop.hash || null,
 			};
-		} else if (oldestNop && oldestNop.nop.op === "name_update") {
-			// The history starts mid-cycle (name_history RPC is fine; chain-walk
-			// reconstruction stops at firstupdate so this branch is mostly the
-			// name_history path). Walk back through vin chain to find the
-			// firstupdate.
-			let curTxid = oldest.txid;
-			let curBlockhash = oldestTx.blockhash || null;
-			let curTx = oldestTx;
-			let steps = 0;
-			const maxSteps = 5000;
-			while (curTx && steps < maxSteps) {
-				steps++;
-				let foundPrev = null;
-				for (const vin of (curTx.vin || [])) {
-					if (!vin || !vin.txid || typeof vin.vout !== "number") continue;
-					let prevTx;
-					try { prevTx = await _coreApi.getRawTransaction(vin.txid); } catch (_e) { continue; }
-					if (!prevTx || !Array.isArray(prevTx.vout)) continue;
-					const prevNop = prevTx.vout[vin.vout] && prevTx.vout[vin.vout].scriptPubKey && prevTx.vout[vin.vout].scriptPubKey.nameOp;
-					if (prevNop && prevNop.name === name && (prevNop.op === "name_update" || prevNop.op === "name_firstupdate")) {
-						foundPrev = { txid: vin.txid, vout: vin.vout, tx: prevTx, nop: prevNop };
-						break;
-					}
+			const newOp = await findNameNewForFirstupdate(row.txid);
+			if (!newOp) warnings.push(`firstupdate tx ${row.txid} has no vin pointing at a name_new (txindex disabled or pruned?)`);
+			cycleOpeners.push({ boundaryIndex: rowIdx, firstupdateOp, newOp, replacesRowAt: rowIdx });
+		} else if (rowInfo.nop.op === "name_update") {
+			if (bi === 0) {
+				// Oldest row in name_history is mid-cycle; walk back to find the
+				// firstupdate this cycle was opened with. This branch is the
+				// pre-2026 behaviour for the very first cycle a -namehistory
+				// node observed.
+				const firstupdateOp = await walkBackToFirstupdate(row.txid, rowInfo.tx);
+				if (firstupdateOp) {
+					const newOp = await findNameNewForFirstupdate(firstupdateOp.txid);
+					if (!newOp) warnings.push(`firstupdate tx ${firstupdateOp.txid} has no vin pointing at a name_new (txindex disabled or pruned?)`);
+					cycleOpeners.push({ boundaryIndex: 0, firstupdateOp, newOp, replacesRowAt: null });
 				}
-				if (!foundPrev) {
-					warnings.push(`could not walk back from ${curTxid} to firstupdate (txindex disabled or pruned?)`);
-					break;
-				}
-				if (foundPrev.nop.op === "name_firstupdate") {
-					let height = null;
-					if (foundPrev.tx.blockhash) {
-						try {
-							const hdr = await _coreApi.getBlockHeaderByHash(foundPrev.tx.blockhash);
-							if (hdr && typeof hdr.height === "number") height = hdr.height;
-						} catch (_e) { /* ignore */ }
-					}
-					firstupdateOp = {
-						kind: "name_firstupdate",
-						txid: foundPrev.txid,
-						vout: foundPrev.vout,
-						height,
-						blocktime: foundPrev.tx.blocktime || foundPrev.tx.time || null,
-						value: foundPrev.nop.value != null ? foundPrev.nop.value : null,
-						value_encoding: foundPrev.nop.value_encoding || null,
-						rand: foundPrev.nop.rand || null,
-						hash: foundPrev.nop.hash || null,
-						_isExistingHistoryRow: false,
-					};
-					curTx = foundPrev.tx;
-					curTxid = foundPrev.txid;
-					break;
-				}
-				curTxid = foundPrev.txid;
-				curTx = foundPrev.tx;
+			} else {
+				// Mid-cycle row immediately after a >36000-block gap that didn't
+				// match a firstupdate. Very unlikely on a -namehistory node
+				// (would mean the gap was a long quiet stretch *within* one
+				// cycle, which isn't possible because the name would have
+				// expired). Worth surfacing so operators can investigate.
+				warnings.push(`history row at height ${row.height} (${row.txid}) looked like a cycle boundary but on-chain op is name_update; possible chain reorg or stale history index?`);
 			}
 		} else {
-			warnings.push(`oldest history tx ${oldest.txid} carries no recognised name_firstupdate / name_update op for ${name}`);
-		}
-	} catch (e) {
-		warnings.push(`getrawtransaction ${oldest.txid} failed: ${e.message || e}`);
-	}
-
-	// Phase 2: from the firstupdate, follow vin to find the matching name_new.
-	let newOp = null;
-	if (firstupdateOp && firstupdateOp.txid) {
-		try {
-			const firstupdateTx = await _coreApi.getRawTransaction(firstupdateOp.txid);
-			if (firstupdateTx && Array.isArray(firstupdateTx.vin)) {
-				for (const vin of firstupdateTx.vin) {
-					if (!vin || !vin.txid || typeof vin.vout !== "number") continue;
-					let prevTx;
-					try { prevTx = await _coreApi.getRawTransaction(vin.txid); } catch (_e) { continue; }
-					if (!prevTx || !Array.isArray(prevTx.vout)) continue;
-					const prevNop = prevTx.vout[vin.vout] && prevTx.vout[vin.vout].scriptPubKey && prevTx.vout[vin.vout].scriptPubKey.nameOp;
-					if (prevNop && prevNop.op === "name_new") {
-						let newHeight = null;
-						if (prevTx.blockhash) {
-							try {
-								const hdr = await _coreApi.getBlockHeaderByHash(prevTx.blockhash);
-								if (hdr && typeof hdr.height === "number") newHeight = hdr.height;
-							} catch (_e) { /* ignore */ }
-						}
-						newOp = {
-							kind: "name_new",
-							txid: vin.txid,
-							vout: vin.vout,
-							height: newHeight,
-							blocktime: prevTx.blocktime || prevTx.time || null,
-							hash: prevNop.hash || null,
-							rand: prevNop.rand || null,
-						};
-						break;
-					}
-				}
-				if (!newOp) warnings.push(`firstupdate tx ${firstupdateOp.txid} has no vin pointing at a name_new (txindex disabled or pruned?)`);
-			}
-		} catch (e) {
-			warnings.push(`getrawtransaction ${firstupdateOp.txid} failed: ${e.message || e}`);
+			warnings.push(`history row ${row.txid} carries unexpected op kind '${rowInfo.nop.op}' for ${name}`);
 		}
 	}
 
-	// Phase 3: stitch together the final ops list:
-	//   [ name_new (if found), name_firstupdate (if found), then every history
-	//     row above the firstupdate, oldest-first ]
-	// History rows already include the firstupdate's row when name_history
-	// returned only one entry (the firstupdate itself); we de-dup by txid.
-	const seen = new Set();
+	// ---------------------------------------------------------------------
+	// Phase 2: walk the sorted history forward, assigning each row to a
+	// cycle and stitching in name_new + name_firstupdate at each opener.
+	// ---------------------------------------------------------------------
 	const ops = [];
-	if (newOp) {
-		ops.push(newOp);
-		seen.add(newOp.txid);
+	const seen = new Set();
+	const cycles = [];
+	let currentCycleIndex = -1;
+	let nextOpenerIdx = 0;
+
+	for (let i = 0; i < sorted.length; i++) {
+		const row = sorted[i];
+		// Open a new cycle if this row is a boundary.
+		if (nextOpenerIdx < cycleOpeners.length && cycleOpeners[nextOpenerIdx].boundaryIndex === i) {
+			const opener = cycleOpeners[nextOpenerIdx++];
+			currentCycleIndex++;
+
+			// Track prior-cycle expiration metadata for the UI.
+			const priorCycle = cycles[cycles.length - 1] || null;
+			const hasPriorExpiration = priorCycle != null;
+			const priorCycleLastOpHeight = priorCycle ? priorCycle.lastOpHeight : null;
+			const priorCycleExpiredAt = (priorCycleLastOpHeight != null)
+				? (priorCycleLastOpHeight + NAME_EXPIRATION_DEPTH)
+				: null;
+
+			const cycle = {
+				cycleIndex: currentCycleIndex,
+				startedAtNew: opener.newOp && typeof opener.newOp.height === "number" ? opener.newOp.height : null,
+				startedAtFirstupdate: opener.firstupdateOp && typeof opener.firstupdateOp.height === "number" ? opener.firstupdateOp.height : null,
+				lastOpHeight: null,  // stamped as we walk rows in this cycle
+				hasPriorExpiration,
+				priorCycleLastOpHeight,
+				priorCycleExpiredAt,
+			};
+			cycles.push(cycle);
+
+			if (opener.newOp && !seen.has(opener.newOp.txid)) {
+				ops.push(Object.assign({}, opener.newOp, { cycleIndex: currentCycleIndex }));
+				seen.add(opener.newOp.txid);
+			}
+			if (opener.firstupdateOp && !seen.has(opener.firstupdateOp.txid)) {
+				ops.push(Object.assign({}, opener.firstupdateOp, { cycleIndex: currentCycleIndex }));
+				seen.add(opener.firstupdateOp.txid);
+				// If the opener REPLACES this history row, mark its txid as seen
+				// so we don't re-emit it as a `name_update` below.
+				if (opener.replacesRowAt === i) {
+					seen.add(row.txid);
+					if (cycles[currentCycleIndex] && typeof row.height === "number") {
+						cycles[currentCycleIndex].lastOpHeight = row.height;
+					}
+					continue;
+				}
+			}
+		}
+
+		if (currentCycleIndex < 0) {
+			// No cycle opened yet (oldest-row walkBackToFirstupdate failed, or
+			// tx-verify yielded an unexpected op). Treat the row as a stray
+			// name_update in a synthetic cycle so the UI still renders
+			// something.
+			currentCycleIndex = 0;
+			cycles.push({
+				cycleIndex: 0,
+				startedAtNew: null,
+				startedAtFirstupdate: null,
+				lastOpHeight: null,
+				hasPriorExpiration: false,
+				priorCycleLastOpHeight: null,
+				priorCycleExpiredAt: null,
+			});
+		}
+
+		if (!seen.has(row.txid)) {
+			ops.push({
+				kind: "name_update",
+				txid: row.txid,
+				vout: typeof row.vout === "number" ? row.vout : null,
+				height: typeof row.height === "number" ? row.height : null,
+				blocktime: row.blocktime || null,
+				value: row.value != null ? row.value : null,
+				value_encoding: row.value_encoding || null,
+				cycleIndex: currentCycleIndex,
+			});
+			seen.add(row.txid);
+		}
+		if (typeof row.height === "number") {
+			cycles[currentCycleIndex].lastOpHeight = row.height;
+		}
 	}
-	if (firstupdateOp) {
-		ops.push(firstupdateOp);
-		seen.add(firstupdateOp.txid);
-	}
-	for (const row of sorted) {
-		if (seen.has(row.txid)) continue;
-		ops.push({
-			kind: "name_update",
-			txid: row.txid,
-			vout: typeof row.vout === "number" ? row.vout : null,
-			height: typeof row.height === "number" ? row.height : null,
-			blocktime: row.blocktime || null,
-			value: row.value != null ? row.value : null,
-			value_encoding: row.value_encoding || null,
-		});
-		seen.add(row.txid);
-	}
+
+	// ---------------------------------------------------------------------
+	// Phase 3: legacy back-compat fields point at the LATEST (current) cycle.
+	// ---------------------------------------------------------------------
+	const lastCycle = cycles.length ? cycles[cycles.length - 1] : null;
 
 	return {
 		ops,
-		cycleStartedAtNew: newOp && typeof newOp.height === "number" ? newOp.height : null,
-		cycleStartedAtFirstupdate: firstupdateOp && typeof firstupdateOp.height === "number" ? firstupdateOp.height : null,
+		cycles,
+		cycleStartedAtNew: lastCycle ? lastCycle.startedAtNew : null,
+		cycleStartedAtFirstupdate: lastCycle ? lastCycle.startedAtFirstupdate : null,
 		ageBlocks: null,   // caller stamps this in once tip is known
 		warnings,
 		elapsedMs: Date.now() - startedAt,

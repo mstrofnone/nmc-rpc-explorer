@@ -169,6 +169,53 @@ as a warning on the History section:
 
 ---
 
+## Lifecycle expansion: stitching in `name_new` + multi-cycle detection
+
+Both methods above return a flat sequence of name ops with no `op` field
+(both literally drop it; `name_history` because the underlying
+`CNameData` struct doesn't store it, the reconstruction path because it
+stops at the firstupdate so the labels would all be `name_update`
+anyway). `expandNameLifecycle` (in `app/api/nameApi.js`) does the
+post-processing that turns that flat sequence into a labelled
+multi-cycle chain:
+
+  1. **Find each cycle's `name_firstupdate`.** A `d/` name expires
+     36,000 blocks after its last op (`NameExpirationDepth` in
+     [`namecoin-core/src/consensus/params.h`](https://github.com/namecoin/namecoin-core/blob/master/src/consensus/params.h)).
+     So any consecutive pair of history rows with `(h[i] - h[i-1]) >
+     36,000` straddles an expiration: the later row HAS to be a
+     `name_firstupdate` opening a fresh registration cycle. We tx-verify
+     each boundary candidate via `getrawtransaction` and only promote it
+     when the on-chain op confirms.
+  2. **Find each cycle's `name_new`.** `name_new` pre-commits a salted
+     hash of the name and reveals nothing about which name it's for.
+     The only way to find the matching `name_new` for a given
+     `name_firstupdate` is to walk the firstupdate's `vin` chain: by
+     construction, exactly one of the firstupdate's inputs spends a
+     prior `name_new` output, and that's the pre-commit. The walk
+     requires `-txindex` on the node.
+  3. **Stitch + label.** Every op in the output gets a `kind`
+     (`name_new` / `name_firstupdate` / `name_update`) and a
+     `cycleIndex` (0 = oldest cycle). The view renders a visible
+     "↓ Earlier cycle" divider between cycles, annotated with the
+     block at which the prior cycle's UTXO expired
+     (last-op-height + 36,000).
+
+A name that was never re-registered just shows up as a single cycle
+(`cycles.length === 1`); the divider rows and "Prior cycles:" banner
+line are suppressed.
+
+If `-txindex` is off, the cycle detection still labels existing rows
+correctly (the boundary check uses the row's tx, which `name_history`
+returns from the cache rather than tx-indexing). The injection of
+historical `name_new` rows above each cycle fails silently (the walk
+needs prevout resolution), and the warnings list surfaces the
+missing-vin notice for the History section. Either way the answer
+stays correct — the page just shows fewer pre-commits than a fully
+indexed node would.
+
+---
+
 ## Choosing between the two
 
 For a public explorer like `explore.testls.bit`, the pragmatic answer

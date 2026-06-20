@@ -361,8 +361,10 @@ block content
 					every <code>name_update</code> up to the current state.  Sorted
 					newest-first; each entry is the latest at the time of that block.
 
-				//- Cycle banner: surface the registration height + age, and warn
-				//- the user that this represents the *current* cycle only.
+				//- Cycle banner: surface the registration height + age of the
+				//- CURRENT cycle, then list any prior expired cycles we discovered.
+				- var __cycles = (nameLifecycle && Array.isArray(nameLifecycle.cycles)) ? nameLifecycle.cycles : []
+				- var __priorCycles = __cycles.length > 1 ? __cycles.slice(0, -1) : []
 				if (nameLifecycle && nameLifecycle.cycleStartedAtFirstupdate != null)
 					.alert.alert-info.small.mb-3
 						strong Current registration cycle.&nbsp;
@@ -382,15 +384,23 @@ block content
 								|  (#{__gap.toLocaleString()} blocks earlier).
 							else
 								| .
-						div.mt-1.text-muted
-							em Note:&nbsp;
-							| if this name was registered before, expired, and was later re-registered,
-							|  those <strong>prior cycles aren't shown here</strong> &mdash; the
-							| <code>name_history</code> RPC and the chain-walk reconstruction both
-							|  stop at the start of the current cycle.  A fresh
-							| <code>name_new</code> + <code>name_firstupdate</code> here is the
-							|  signature of either a brand-new registration or a re-registration
-							|  after a prior cycle expired.
+						if (__priorCycles.length > 0)
+							div.mt-2
+								strong Prior cycles:&nbsp;
+								| this name was registered, expired, and re-registered
+								|  <strong>#{__priorCycles.length}</strong> time#{__priorCycles.length === 1 ? "" : "s"} before the current cycle.
+								|  Each prior cycle's <code>name_new</code> + <code>name_firstupdate</code>
+								|  is shown in the table below; the gap between cycles is the
+								|  window after the prior cycle's last op when the name was
+								|  available for anyone to re-register (36,000 blocks after
+								|  the last op &mdash; about 250&nbsp;days &mdash; the name expires).
+						else
+							div.mt-1.text-muted
+								em Note:&nbsp;
+								| if this name was registered before, expired, and was later re-registered,
+								|  prior cycles would be shown in the table below as additional
+								| <code>name_new</code> + <code>name_firstupdate</code> rows separated
+								|  by a visible gap.  None were detected for this name.
 				else if (nameLifecycle && nameLifecycle.warnings && nameLifecycle.warnings.length)
 					.alert.alert-warning.small.mb-3
 						strong Lifecycle expansion incomplete:
@@ -436,7 +446,26 @@ block content
 								th Value
 								th(style="width:18rem") Tx
 						tbody
+							- var __prevCycle = null
 							each entry in __rows
+								//- Visible divider when crossing into a prior cycle (rows are newest-first).
+								- var __curCycle = (typeof entry.cycleIndex === "number") ? entry.cycleIndex : null
+								if (__prevCycle != null && __curCycle != null && __curCycle < __prevCycle)
+									- var __priorMeta = (__cycles.length && __cycles[__prevCycle]) ? __cycles[__prevCycle] : null
+									tr.table-warning
+										td(colspan=5).small.py-2
+											strong &darr; Earlier cycle (#{__curCycle + 1} of #{__cycles.length}).&nbsp;
+											| Rows above are the cycle that opened with the
+											| <code>name_new</code> + <code>name_firstupdate</code>
+											|  immediately above this divider.  Rows below are the
+											|  preceding registration, which expired around block
+											if (__priorMeta && __priorMeta.priorCycleExpiredAt != null)
+												a(href=`./block-height/${__priorMeta.priorCycleExpiredAt}`).ms-1= __priorMeta.priorCycleExpiredAt.toLocaleString()
+											else
+												| (height not resolvable)
+											|  (36,000 blocks &mdash; ~250 days &mdash; after its last <code>name_update</code>),
+											|  freeing the name for whoever registered it next.
+								- __prevCycle = __curCycle
 								- var __valStr = (entry.value == null ? "" : String(entry.value))
 								- var __valTrim = __valStr.trim()
 								- var __valIsJson = (__valTrim.startsWith("{") || __valTrim.startsWith("["))
