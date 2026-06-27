@@ -251,7 +251,7 @@ module.exports = {
 			{name: "Basics", items: [0, 2]},
 			{name: "Mempool", items: [4, 16, 5]},
 			{name: "Analysis", items: [9, 18, 10, 11, 12, 3, 20]},
-			{name: "Technical", items: [15, 6, 7, 1]},
+			{name: "Technical", items: [15, 6, 7, 1, 21]},
 			{name: "Fun", items: (currentCoin === "BTC") ? [8, 17, 19, 13] : []},
 		]
 	},
@@ -295,6 +295,8 @@ module.exports = {
 	/* 19 */	{name:"Holidays", url:"./holidays", desc:`Curated list of ${coins[currentCoin].name} 'Holidays'.`, iconClass:"bi-calendar-heart"},
 
 	/* 20 */	{name:"Next Halving", url:"./next-halving", desc:"Estimated details about the next halving.", iconClass:"bi-square-half"},
+
+	/* 21 */	{name:"NFT Files", url:"./nft", desc:`Files stored on the ${coins[currentCoin].name} blockchain as chunked nft/* name updates. Includes a reconstruction howto.`, iconClass:"bi-archive"},
 	]
 };
 

@@ -513,6 +513,18 @@ function loadChangelog() {
 			global.nameHistoryDocMarkdown = data;
 		}
 	});
+
+	// Background doc for the /nft page: step-by-step howto for pulling a
+	// file (e.g. nft/bitcoin-0.1.0.rar) out of the chain's name history and
+	// verifying it against the on-chain MD5/SHA. Rendered as Markdown inside
+	// a collapsible <details> on /nft.
+	fs.readFile(path.join(__dirname, "docs", "nft-files.md"), 'utf8', function(err, data) {
+		if (err) {
+			utils.logError("loadNftFilesDoc", err);
+		} else {
+			global.nftFilesDocMarkdown = data;
+		}
+	});
 }
 
 function loadHistoricalDataForChain(chain) {

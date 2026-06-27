@@ -466,7 +466,21 @@ block content
 											|  (36,000 blocks &mdash; ~250 days &mdash; after its last <code>name_update</code>),
 											|  freeing the name for whoever registered it next.
 								- __prevCycle = __curCycle
-								- var __valStr = (entry.value == null ? "" : String(entry.value))
+								- var __valStrRaw = (entry.value == null ? "" : String(entry.value))
+								- var __valEnc = entry.value_encoding || null
+								//- When the node returns a hex-encoded value (because the bytes
+								//- aren't valid ASCII -- e.g. binary chunks of an `nft/*` file),
+								//- decode it. If the decoded bytes look like printable UTF-8
+								//- (most often: a JSON object), render the text; otherwise
+								//- label it as a binary chunk with a collapsible hex view.
+								- var __valIsHex = (__valEnc === "hex" && __valStrRaw.length > 0 && /^[0-9a-fA-F]+$/.test(__valStrRaw) && (__valStrRaw.length % 2 === 0))
+								- var __valByteLen = __valIsHex ? (__valStrRaw.length / 2) : __valStrRaw.length
+								- var __valHexFull = __valIsHex ? __valStrRaw.toLowerCase() : null
+								- var __valDecoded = null
+								- var __valDecodedPrintable = false
+								if (__valIsHex)
+									- try { var __bb = Buffer.from(__valStrRaw, "hex"); var __asUtf8 = __bb.toString("utf8"); var __reenc = Buffer.from(__asUtf8, "utf8"); var __utf8Ok = (__reenc.length === __bb.length && __reenc.equals(__bb)); if (__utf8Ok) { var __ctrls = (__asUtf8.match(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g) || []).length; if (__ctrls / Math.max(1, __asUtf8.length) < 0.05) { __valDecoded = __asUtf8; __valDecodedPrintable = true; } } } catch (_e) { /* leave decoded null */ }
+								- var __valStr = __valDecodedPrintable ? __valDecoded : (__valIsHex ? "" : __valStrRaw)
 								- var __valTrim = __valStr.trim()
 								- var __valIsJson = (__valTrim.startsWith("{") || __valTrim.startsWith("["))
 								- var __valParsed = null
@@ -474,6 +488,8 @@ block content
 									- try { __valParsed = JSON.parse(__valTrim); } catch (_e) { __valParsed = null; }
 								- var __valPretty = __valParsed ? JSON.stringify(__valParsed, null, 2) : __valStr
 								- var __valPreview = __valStr.length > 240 ? (__valStr.slice(0, 240) + "…") : __valStr
+								- var __valIsBinary = (__valIsHex && !__valDecodedPrintable)
+								- var __valHexPreview = __valIsBinary ? (__valHexFull.length > 96 ? (__valHexFull.slice(0, 96) + "…") : __valHexFull) : null
 								- var __opLabel = entry.kind || entry.op || "name_update"
 								- var __opBadge = (__opLabel === "name_firstupdate" ? "bg-success" : (__opLabel === "name_new" ? "bg-info text-dark" : "bg-primary"))
 								- var __opTitle = (__opLabel === "name_new" ? "Pre-commit of a salted hash of (rand + name). Reveals nothing about the name; the human-readable name only appears on chain when the matching name_firstupdate confirms ~12+ blocks later." : (__opLabel === "name_firstupdate" ? "Reveals (rand + name + value), proving the earlier name_new committed to this exact name." : (__opLabel === "name_update" ? "Updates the value and resets the 36,000-block expiry counter." : null)))
@@ -498,15 +514,23 @@ block content
 											if (entry.hash)
 												|  hash:
 												code.font-monospace.small.ms-1= entry.hash
-										else if (__valStr.length === 0)
+										else if (__valStrRaw.length === 0)
 											span.text-muted.small (empty)
+										else if (__valIsBinary)
+											//- Non-printable bytes (typical for `nft/*` chunks). Show a
+											//- one-liner with the byte count and a collapsible hex view.
+											details
+												summary.small(style="cursor:pointer")
+													span.text-muted binary chunk &mdash; #{__valByteLen.toLocaleString()} bytes
+													code.font-monospace.small.ms-2.text-muted= __valHexPreview
+												pre.small.mt-2.mb-0(style="white-space:pre-wrap; word-break:break-all; max-height:24rem; overflow:auto")= __valHexFull
 										else if (__valStr.length <= 240 && !__valIsJson)
 											code.font-monospace.small(style="white-space:pre-wrap; word-break:break-all")= __valStr
 										else
 											details
 												summary(style="cursor:pointer")
 													code.font-monospace.small= __valPreview
-												pre.small.mt-2.mb-0(style="white-space:pre-wrap; word-break:break-all; max-height:24rem; overflow:auto")= __valPretty
+											pre.small.mt-2.mb-0(style="white-space:pre-wrap; word-break:break-all; max-height:24rem; overflow:auto")= __valPretty
 									td
 										if (entry.txid)
 											a.font-monospace.small(href=`./tx/${entry.txid}`)= entry.txid.slice(0, 16) + "…"

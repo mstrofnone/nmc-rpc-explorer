@@ -2369,6 +2369,29 @@ router.get("/changelog", function(req, res, next) {
 	next();
 });
 
+// User-facing page listing files stored on the Namecoin chain as chunked
+// `nft/*` name updates, with the reconstruction howto in a collapsible
+// section underneath. Linked from the Tools card / Tools menu.
+router.get("/nft", function(req, res, next) {
+	res.locals.nftFiles = [
+		{
+			name: "nft/bitcoin-0.1.0.rar",
+			url: "./name/nft/bitcoin-0.1.0.rar",
+			size: 2132686,
+			kind: "RAR archive data, v4, os: Win32",
+			md5: "91e2dfa2af043eabbb38964cbf368500",
+			desc: "Bitcoin v0.1.0 source + Win32 binary (bitcoin.exe, libeay32.dll, src/*). Spans 4,108 name_history rows across heights 653,037 \u2192 807,419: 6 JSON-meta rows plus 4,102 binary chunks (4,101 \u00d7 520\u202fB + 1 \u00d7 166\u202fB tail = 2,132,686 bytes).",
+		},
+	];
+
+	const src = global.nftFilesDocMarkdown || "# NFT Files\n\nDocumentation not loaded.";
+	res.locals.nftFilesDocHtml = markdown.render(src);
+
+	res.render("nft");
+
+	next();
+});
+
 // Operator/user-facing doc explaining the two methods the explorer uses to
 // build name history on /name/<n> (name_history RPC vs chain-walk
 // reconstruction). Linked from a "learn more" hint on the /name/<n> page.

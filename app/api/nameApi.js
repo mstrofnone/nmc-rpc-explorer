@@ -88,9 +88,26 @@ function nameShow(name, options = {}) {
 }
 
 function nameHistory(name) {
+	// Request the value as hex so binary payloads round-trip losslessly.
+	//
+	// Without an explicit `valueEncoding`, Namecoin Core returns `value: null`
+	// and `value_encoding: "ascii"` for any update whose bytes aren't valid
+	// ASCII -- which is the common case for `nft/*` chains that store a
+	// chunked file across thousands of `name_update`s. That made the history
+	// table on `/name/<n>` render most rows as "(empty)".
+	//
+	// `nameEncoding: "ascii"` is the existing default; we set it explicitly
+	// for clarity. Older nodes that don't accept the options arg fall back
+	// to the no-arg call (downstream gets `value`/`value_encoding` as-is).
 	return rpcApi.getRpcDataWithParams({
 		method: "name_history",
-		parameters: [name],
+		parameters: [name, { nameEncoding: "ascii", valueEncoding: "hex" }],
+	}).catch((err) => {
+		// Fall back if a pre-0.19 node rejects the options object.
+		return rpcApi.getRpcDataWithParams({
+			method: "name_history",
+			parameters: [name],
+		});
 	});
 }
 

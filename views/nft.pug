@@ -1,0 +1,73 @@
+extends layout
+
+block headContent
+	title NFT Files
+
+	style.
+		.doc-body h1, .doc-body h2, .doc-body h3 { font-weight: 300; }
+		.doc-body h1 { font-size: 1.5rem; margin-bottom: 1rem; }
+		.doc-body h2 { font-size: 1.25rem; margin-top: 1.75rem; margin-bottom: 0.6rem; }
+		.doc-body h3 { font-size: 1.05rem; margin-top: 1.25rem; margin-bottom: 0.4rem; }
+		.doc-body table { width: auto; max-width: 100%; }
+		.doc-body table th, .doc-body table td { padding: 0.4rem 0.75rem; border: 1px solid var(--bs-border-color); font-size: 0.9rem; }
+		.doc-body table th { background: var(--bs-tertiary-bg); }
+		.doc-body code { background: var(--bs-tertiary-bg); padding: 0.1rem 0.35rem; border-radius: 0.2rem; font-size: 0.9em; }
+		.doc-body pre { background: var(--bs-tertiary-bg); padding: 0.75rem 1rem; border-radius: 0.4rem; overflow-x: auto; }
+		.doc-body pre code { background: transparent; padding: 0; }
+		.doc-body blockquote { border-left: 0.25rem solid var(--bs-border-color); padding: 0.4rem 1rem; color: var(--bs-secondary-color); }
+
+		.nft-file-card { border: 1px solid var(--bs-border-color); border-radius: 0.4rem; padding: 1rem 1.25rem; }
+		.nft-file-card .file-name { font-size: 1.1rem; font-weight: 500; }
+		.nft-file-card .file-meta { font-size: 0.85rem; color: var(--bs-secondary-color); }
+
+block content
+	+pageTitle("NFT Files")
+
+	+contentSection("Files stored on chain")
+		p.
+			Namecoin lets a publisher split a binary file into ~520-byte
+			chunks and write one chunk per <code>name_update</code> against
+			the same name.  The values form a linked list of transactions
+			that, walked in order and concatenated, reconstruct the original
+			file byte-for-byte.  Known <code>nft/*</code> chains are listed
+			below.  The reconstruction recipe is in the collapsible section
+			at the bottom of the page.
+
+		each item, idx in nftFiles
+			if (idx > 0)
+				div.mt-3
+			.nft-file-card.shadow-sm
+				.clearfix
+					.float-start.pt-1(style="width: 38px;")
+						i.fs-4.bi-file-zip(style="width: 22px; margin-right: 10px;")
+					.float-start
+						div
+							a.file-name(href=item.url)= item.name
+						div.file-meta
+							if (item.size)
+								span= `${item.size.toLocaleString()} bytes`
+								| &nbsp;&middot;&nbsp;
+							if (item.kind)
+								span= item.kind
+							if (item.md5)
+								| &nbsp;&middot;&nbsp;
+								span MD5
+								code.font-monospace.ms-1= item.md5
+				div.mt-2(style="padding-left: 39px;")
+					if (item.desc)
+						p.mb-0= item.desc
+
+	+contentSection("How to reconstruct a file from chain")
+		p.
+			Each <code>nft/*</code> name's value history is a chunked file
+			plus a small JSON manifest.  Walking the transaction chain
+			parent &rarr; child, concatenating the non-JSON values, and
+			verifying against the publisher-stamped MD5 reconstructs the
+			file losslessly.  Expand for the full recipe.
+
+		details
+			summary(style="cursor:pointer")
+				strong Reconstruction howto &mdash; full step-by-step
+				span.text-muted.small.ms-2 (script, prerequisites, troubleshooting)
+			.mt-3.doc-body
+				| !{nftFilesDocHtml}

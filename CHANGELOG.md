@@ -1,3 +1,43 @@
+##### nmc-3.6.33
+###### 2026-06-27
+
+**`/name/<n>` history table no longer shows `(empty)` for binary values, and
+a new `/nft` page indexes files stored on chain.**
+
+Two related fixes for the `nft/*` use case (files chunked across thousands of
+`name_update` ops, e.g. `nft/bitcoin-0.1.0.rar`):
+
+1. **`name_history` is now called with `valueEncoding: "hex"`.** Without an
+   explicit encoding, Namecoin Core returns `value: null` and
+   `value_encoding: "ascii"` for any update whose bytes aren't valid ASCII --
+   which is virtually every chunk of a binary `nft/*` file. The history
+   table on `/name/nft/bitcoin-0.1.0.rar` was rendering 4,102 of 4,108 rows
+   as "(empty)". With the new encoding the node returns the raw bytes as
+   hex, and:
+
+   - rows that decode to printable UTF-8 (e.g. the JSON manifest rows at
+     heights 653,037 / 688,578 / 724,081 / 807,419) render as the JSON
+     text they actually are, in the existing collapsible `<details>`;
+   - rows that don't (the binary chunks) render as
+     `binary chunk -- <N> bytes` with a short hex preview and a
+     collapsible full-hex view.
+
+   Pre-0.19 nodes that reject the options object fall back to the no-arg
+   `name_history` call automatically.
+
+2. **New `/nft` page** (linked as the last entry in Tools → Technical),
+   listing the known on-chain `nft/*` files with the publisher-stamped
+   size / MD5 / kind, a one-click link into the per-name history view, and
+   a collapsible "reconstruction howto" section explaining the chunk-
+   ordering algorithm and shipping the standalone `nft_reconstruct.py`
+   script.
+
+No behaviour change for non-`nft` names: ASCII / UTF-8 value rows are
+rendered exactly as before. The hex-decode + classify-printable logic only
+runs when the node returns `value_encoding: "hex"`.
+
+---
+
 ##### nmc-3.6.32
 ###### 2026-06-21
 
