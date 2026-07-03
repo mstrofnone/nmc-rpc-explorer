@@ -968,11 +968,25 @@ router.get("/names", asyncHandler(async (req, res, next) => {
 		const start = req.query.start || "";
 		const count = Math.min(parseInt(req.query.count || "50", 10) || 50, 500);
 		const prefix = req.query.prefix || null;
-		const params = [start, count];
-		if (prefix) params.push({ prefix });
+		// Request nameEncoding/valueEncoding=utf8 so rows with non-ASCII bytes
+		// (é, Ω, emoji, CJK) come back as readable strings instead of
+		// `{name: null, name_encoding: "hex"}`. Binary values fall back to
+		// `value_encoding: "hex"` per-row.
+		const scanOpts = { nameEncoding: "utf8", valueEncoding: "utf8" };
+		if (prefix) scanOpts.prefix = prefix;
+		const params = [start, count, scanOpts];
 		const rows = await coreApi.tryRpcCmd ? null : null;
 		// Use nameApi's RPC pipe directly (mirrors /name/:name path).
-		const raw = await require("./../app/api/rpcApi.js").getRpcDataWithParams({ method: "name_scan", parameters: params });
+		let raw;
+		try {
+			raw = await require("./../app/api/rpcApi.js").getRpcDataWithParams({ method: "name_scan", parameters: params });
+		} catch (_e) {
+			// Pre-0.19 fallback: retry without options for old nodes that reject
+			// unknown option keys.
+			const legacyParams = [start, count];
+			if (prefix) legacyParams.push({ prefix });
+			raw = await require("./../app/api/rpcApi.js").getRpcDataWithParams({ method: "name_scan", parameters: legacyParams });
+		}
 		res.json((raw || []).map((r) => ({
 			name: r.name,
 			height: r.height,

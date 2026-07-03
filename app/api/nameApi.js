@@ -80,15 +80,50 @@ function nameShow(name, options = {}) {
 	// address, etc., all of which are useful to display. Callers that
 	// specifically want the active-only behaviour can pass
 	// `{ allowExpired: false }`.
-	const opts = Object.assign({ allowExpired: true }, options);
+	//
+	// Also default `nameEncoding` and `valueEncoding` to `"utf8"`. Namecoin
+	// Core's default is `"ascii"` which:
+	//   * REJECTS the whole call with RPC error -1000
+	//     ("Name/value is invalid for encoding ascii") when the `name`
+	//     argument itself contains any non-ASCII byte -- e.g. `d/ç` is
+	//     currently unlookupable on the explorer, even though it exists
+	//     on-chain and the /name/<n> route decode-URI's it correctly.
+	//   * Returns `value: null, value_encoding: "ascii"` for any value
+	//     whose bytes aren't pure ASCII -- so any name whose JSON payload
+	//     contains a UTF-8 character (é, Ω, emoji, CJK, etc.) rendered as
+	//     an "Empty value" section on /name/<n>.
+	// Requesting `utf8` accepts and returns valid-UTF-8 payloads verbatim;
+	// payloads that are neither ASCII nor valid UTF-8 (typical `nft/*` binary
+	// chunks) come back with `value_encoding: "hex"` for that specific field
+	// so the UI can still surface the raw bytes.
+	const opts = Object.assign({
+		allowExpired: true,
+		nameEncoding: "utf8",
+		valueEncoding: "utf8",
+	}, options);
 	return rpcApi.getRpcDataWithParams({
 		method: "name_show",
 		parameters: [name, opts],
+	}).catch((err) => {
+		// Pre-0.19 (or otherwise strict) nodes may reject the options object.
+		// Fall back to the legacy no-options form so we at least return
+		// something for ASCII-only names on older servers. Callers that need
+		// the extended options (e.g. `byHash`) will still surface the error.
+		if (err && (err.code === -32602 || /unknown named parameter|invalid parameter/i.test(String(err.message || "")))) {
+			return rpcApi.getRpcDataWithParams({
+				method: "name_show",
+				parameters: [name],
+			});
+		}
+		throw err;
 	});
 }
 
 function nameHistory(name) {
-	// Request the value as hex so binary payloads round-trip losslessly.
+	// Request `nameEncoding: "utf8"` so this call succeeds for non-ASCII
+	// names (namecoind's default `"ascii"` rejects them with RPC error
+	// -1000). Request `valueEncoding: "hex"` so binary payloads round-trip
+	// losslessly.
 	//
 	// Without an explicit `valueEncoding`, Namecoin Core returns `value: null`
 	// and `value_encoding: "ascii"` for any update whose bytes aren't valid
@@ -96,12 +131,17 @@ function nameHistory(name) {
 	// chunked file across thousands of `name_update`s. That made the history
 	// table on `/name/<n>` render most rows as "(empty)".
 	//
-	// `nameEncoding: "ascii"` is the existing default; we set it explicitly
-	// for clarity. Older nodes that don't accept the options arg fall back
-	// to the no-arg call (downstream gets `value`/`value_encoding` as-is).
+	// Hex is preferred over utf8 here because history rows carry the FULL
+	// range of values a name has ever held, including binary blobs that are
+	// not valid UTF-8 (nft/* chunks). Hex round-trips every byte cleanly;
+	// the view then decodes it as UTF-8 opportunistically and falls back to
+	// a collapsible hex block for genuinely-binary rows.
+	//
+	// Older nodes that don't accept the options arg fall back to the no-arg
+	// call (downstream gets `value`/`value_encoding` as-is).
 	return rpcApi.getRpcDataWithParams({
 		method: "name_history",
-		parameters: [name, { nameEncoding: "ascii", valueEncoding: "hex" }],
+		parameters: [name, { nameEncoding: "utf8", valueEncoding: "hex" }],
 	}).catch((err) => {
 		// Fall back if a pre-0.19 node rejects the options object.
 		return rpcApi.getRpcDataWithParams({
@@ -111,13 +151,37 @@ function nameHistory(name) {
 	});
 }
 
-function nameScan(start, count) {
-	const params = [];
-	if (start != null) params.push(start);
-	if (count != null) params.push(count);
+function nameScan(start, count, extraOptions) {
+	// `nameEncoding: "utf8"` so rows for non-ASCII names come back with a
+	// readable `.name` string instead of `name: null, name_encoding: "hex"`
+	// (which would fall out of the cursor advance logic in getNamesSummary
+	// and re-trigger the full-scan pagination bug documented in
+	// explorer4.txt §1). `valueEncoding: "utf8"` so JSON values with UTF-8
+	// characters (Ω, é, emoji, CJK) come back as decodable strings for the
+	// value-shape classifier + filter tiles; binary values fall back to
+	// `value_encoding: "hex"` per-row.
+	//
+	// name_scan's options object goes in the third position; the first two
+	// are start (cursor) and count. `start` MUST be a string ("" = beginning
+	// of keyspace), so we normalise here.
+	const opts = Object.assign({
+		nameEncoding: "utf8",
+		valueEncoding: "utf8",
+	}, extraOptions || {});
+	const startArg = start == null ? "" : start;
+	const countArg = count == null ? 10 : count;
 	return rpcApi.getRpcDataWithParams({
 		method: "name_scan",
-		parameters: params,
+		parameters: [startArg, countArg, opts],
+	}).catch((err) => {
+		// Fall back if a pre-0.19 node rejects the options object.
+		const params = [];
+		if (start != null) params.push(start);
+		if (count != null) params.push(count);
+		return rpcApi.getRpcDataWithParams({
+			method: "name_scan",
+			parameters: params,
+		});
 	});
 }
 
@@ -137,11 +201,44 @@ function nameScan(start, count) {
 //
 // If a name argument is provided, the RPC restricts results to that name.
 function namePending(name) {
-	const parameters = [];
-	if (name != null) parameters.push(name);
+	// name_pending accepts the same {nameEncoding, valueEncoding} options as
+	// name_show / name_history / name_scan. Default them to "utf8" so
+	// pending ops for non-ASCII names come back with readable `.name` /
+	// `.value` strings for the Pending Names page (/mempool-name-ops), the
+	// per-name pending panel on /name/<n>, and the homepage tile pending
+	// badge. Without this, a mempool `name_firstupdate` for `d/ç` would
+	// render as `name: null, name_encoding: "hex"` and the pending row
+	// would be silently dropped by any downstream code that filters on
+	// `typeof row.name === "string"`.
+	//
+	// When a name filter is supplied it also needs `nameEncoding: "utf8"`
+	// so the filter matches non-ASCII names on the way in.
+	const opts = { nameEncoding: "utf8", valueEncoding: "utf8" };
+	// name_pending's positional signature is (name, options); `name` is
+	// optional. Namecoind's JSON-RPC positional-arg validator refuses to
+	// promote an options object into slot 0 (returns error -3 "Wrong type
+	// passed: Position 1 (name): expected string"), so when there is no
+	// name filter we send explicit JSON `null` in slot 0 to hold the
+	// position -- name_pending treats null the same as omitted and returns
+	// every pending name op. Verified against namecoind on
+	// 127.0.0.1:8336 via direct JSON-RPC call.
+	const parameters = name != null ? [name, opts] : [null, opts];
 	return rpcApi.getRpcDataWithParams({
 		method: "name_pending",
-		parameters: parameters,
+		parameters,
+	}).catch((err) => {
+		// Pre-0.19 fallback: any complaint about the options object shape or
+		// argument types drops us back to the legacy no-options form. We
+		// lose UTF-8 for pending rows only; the pending panel still works.
+		if (err && (err.code === -3 || err.code === -8 || err.code === -32602 || /unknown named parameter|invalid parameter|type mismatch|expected type|wrong type/i.test(String(err.message || "")))) {
+			const legacyParams = [];
+			if (name != null) legacyParams.push(name);
+			return rpcApi.getRpcDataWithParams({
+				method: "name_pending",
+				parameters: legacyParams,
+			});
+		}
+		throw err;
 	});
 }
 
@@ -177,11 +274,27 @@ function collectNameOps(transactions) {
 
 // Best-effort pretty rendering for a value, returns
 //   { kind: "json"|"text"|"hex"|"empty", display: string, parsed?: any }
+//
+// `encoding` is the `value_encoding` field returned by namecoind (one of
+// "ascii", "utf8", "hex"). When the caller requested `valueEncoding: "utf8"`
+// (which nameShow/nameScan now do by default -- see their comments), plain
+// text and JSON values come back as decoded strings and hit the JSON/text
+// path below directly. `"hex"` still shows up when the payload is genuinely
+// binary (e.g. nft/* file chunks) OR when the caller asked for hex
+// explicitly (nameHistory does, for lossless round-trip). In that case we
+// try to decode the hex as UTF-8 opportunistically -- if the result is valid
+// UTF-8 with negligible control characters we render it as text/JSON; if
+// not, we fall through to `kind: "hex"` so the view can render a
+// collapsible hex block.
 function renderNameValue(value, encoding) {
 	if (value == null || value === "") {
 		return { kind: "empty", display: "" };
 	}
 	if (encoding === "hex") {
+		const decoded = _tryDecodeHexAsUtf8(String(value));
+		if (decoded != null) {
+			return renderNameValue(decoded, "utf8");
+		}
 		return { kind: "hex", display: value };
 	}
 	const trimmed = String(value).trim();
@@ -198,6 +311,30 @@ function renderNameValue(value, encoding) {
 		}
 	}
 	return { kind: "text", display: value };
+}
+
+// Try to decode a hex string as UTF-8 text. Returns the decoded string when
+// the bytes are valid UTF-8 AND look like printable text (< 5% control chars);
+// otherwise returns null so the caller renders the raw hex. Mirrors the
+// inline decoder in views/name.pug's per-history-row rendering so both
+// surfaces treat UTF-8-in-hex the same way.
+function _tryDecodeHexAsUtf8(hex) {
+	if (!hex || typeof hex !== "string") return null;
+	if (hex.length === 0 || hex.length % 2 !== 0) return null;
+	if (!/^[0-9a-fA-F]+$/.test(hex)) return null;
+	try {
+		const bytes = Buffer.from(hex, "hex");
+		const asUtf8 = bytes.toString("utf8");
+		// Node's Buffer.toString("utf8") replaces invalid sequences with U+FFFD
+		// silently, so re-encode and byte-compare to detect that.
+		const reenc = Buffer.from(asUtf8, "utf8");
+		if (reenc.length !== bytes.length || !reenc.equals(bytes)) return null;
+		const ctrls = (asUtf8.match(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g) || []).length;
+		if (ctrls / Math.max(1, asUtf8.length) >= 0.05) return null;
+		return asUtf8;
+	} catch (_e) {
+		return null;
+	}
 }
 
 // Identify a Namecoin "namespace" (the prefix before the first slash) and the
@@ -739,13 +876,32 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 		const maxPages = Math.ceil(perPrefixCap / pageSize);
 		let hitFullPageLimit = false;
 		while (pages < maxPages) {
-			const params = [last, pageSize];
-			if (prefix) params.push({ prefix });
+			// Explicit UTF-8 encoding for both name and value so rows with any
+			// non-ASCII bytes come back with readable `.name` / `.value` strings.
+			// Without this, namecoind defaults to "ascii" and returns
+			// `name: null, name_encoding: "hex"` for non-ASCII names -- which then
+			// breaks cursor advancement (walked-back-from-end fix in this same
+			// function) AND makes non-ASCII values invisible to the value-shape
+			// classifier. Binary values (nft/* chunks) still come back as
+			// `value_encoding: "hex"` per-row, which the classifier's rawValue
+			// path handles.
+			const scanOpts = { nameEncoding: "utf8", valueEncoding: "utf8" };
+			if (prefix) scanOpts.prefix = prefix;
+			const params = [last, pageSize, scanOpts];
 			let rows;
 			try {
 				rows = await rpcApi.getRpcDataWithParams({ method: "name_scan", parameters: params });
-			} catch (_e) {
-				break;
+			} catch (_e1) {
+				// Pre-0.19 fallback: retry without the options object so old nodes
+				// (or nodes that reject unknown option keys strictly) still work,
+				// at the cost of losing UTF-8 for this scan.
+				const legacyParams = [last, pageSize];
+				if (prefix) legacyParams.push({ prefix });
+				try {
+					rows = await rpcApi.getRpcDataWithParams({ method: "name_scan", parameters: legacyParams });
+				} catch (_e2) {
+					break;
+				}
 			}
 			if (!Array.isArray(rows) || rows.length === 0) break;
 

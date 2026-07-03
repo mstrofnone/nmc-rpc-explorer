@@ -1,3 +1,49 @@
+##### nmc-3.6.34
+###### 2026-07-03
+
+**Non-ASCII UTF-8 names and values now render correctly across the explorer.**
+
+Namecoin Core defaults `nameEncoding` and `valueEncoding` on `name_show`,
+`name_history`, `name_scan`, and `name_pending` to `"ascii"`. When the name
+or value carries any non-ASCII byte (é, ç, Ω, emoji, CJK, ...) namecoind
+either:
+
+* Returns `value: null, value_encoding: "ascii"` (silent drop), OR
+* Rejects the whole call with RPC error -1000
+  (`"Name/value is invalid for encoding ascii"`) when the *name* argument
+  itself is non-ASCII -- e.g. `/name/%C3%A7` on the explorer returned
+  `"Name lookup failed"` for the real, on-chain name `ç`.
+
+All four RPCs now request `nameEncoding: "utf8"` and `valueEncoding: "utf8"`
+by default. Non-ASCII names are lookupable; JSON values with UTF-8
+characters render as text/JSON instead of "Empty value". Genuinely-binary
+payloads (`nft/*` chunks, non-UTF-8 blobs) come back as `value_encoding:
+"hex"` per-row and take the existing hex-render path.
+
+`renderNameValue()` also grew an opportunistic hex-to-UTF-8 decoder, mirroring
+the per-row logic that already lived in `views/name.pug` since 3.6.32. So any
+value that arrives as hex but decodes cleanly as UTF-8 now surfaces as its
+decoded text/JSON on the top-of-page "Value" tab too, not just in the
+history table.
+
+Each RPC also gained a pre-0.19 fallback path: if a stricter node rejects
+the options object, the call retries in its legacy no-options form and just
+loses UTF-8 support for that call rather than 500ing the page.
+
+Side note: `name_encoding` / `value_encoding` on transaction outputs
+(`getrawtransaction` / `getblock` verbosity-2 -> `scriptPubKey.nameOp`) are
+still controlled by the daemon-wide `-nameencoding` / `-valueencoding` flags,
+not per-call options. To make the mempool / next-block / /tx views show
+non-ASCII names too, add these to `/etc/namecoin/namecoin.conf`:
+
+    nameencoding=utf8
+    valueencoding=utf8
+
+and restart namecoind. Not required for the /name/<n> or /names pages
+fixed above.
+
+---
+
 ##### nmc-3.6.33
 ###### 2026-06-27
 
