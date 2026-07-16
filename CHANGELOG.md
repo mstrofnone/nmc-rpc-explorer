@@ -1,3 +1,35 @@
+##### nmc-3.6.35
+###### 2026-07-17
+
+**Value-shape filter fix: `/utxo-set` I2P count no longer includes prose-only
+`.i2p` mentions.**
+
+The I2P value-shape classifier was over-eager: its regex matched any bare
+`.i2p` label at a word boundary, so squatter placeholder values like
+
+    Contact foo@mail.i2p or foo@i2pmail.org about acquiring this name
+
+lit up the filter even though the record carries no I2P service pointer.
+On one production mirror this misclassified 118 names — essentially the
+entire `i2p/*` squatter namespace — as "I2P-publishing" names.
+
+The fix tightens `I2P_RE` in `app/api/nameApi.js` to require a proper
+52-character base32 destination followed by `.b32.i2p`, mirroring the
+stricter shape the sibling `ONION_RE` already enforces for onion hosts.
+Structured records that publish an `i2p` field are still detected via the
+separate deep-key check in `classifyNameValue()`, so no genuine I2P names
+are lost — only the noise.
+
+The `filterDescriptions.i2p` tooltip on `/utxo-set` was updated to spell
+out the "bare `.i2p` labels do NOT match" rule so the fallback isn't
+reintroduced by future maintainers.
+
+Operators picking up this release: the tightened counts and lists don't
+appear until the next background `refreshNamesSummary()` tick (every 30
+minutes by default). Restart or wait one interval to see them.
+
+---
+
 ##### nmc-3.6.31
 ###### 2026-05-29
 

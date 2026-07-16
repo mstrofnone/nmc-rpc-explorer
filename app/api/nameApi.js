@@ -439,7 +439,13 @@ function parseNameIdFields(parsedValue) {
 // ---------------------------------------------------------------------------
 
 const ONION_RE = /\b[a-z2-7]{16,56}\.onion\b/i;
-const I2P_RE = /\b[a-z2-7]{52,60}\.b32\.i2p\b|\.i2p\b/i;
+// I2P host format: 52-char base32 destination + `.b32.i2p`. Deliberately
+// does NOT match bare `.i2p` labels — squatter placeholders like
+// "Contact foo@mail.i2p or foo@i2pmail.org about acquiring this name"
+// contain `.i2p` at word boundaries but carry no actual I2P destination.
+// If a name really publishes an I2P service via an `i2p` JSON field the
+// deep-key check in classifyNameValue() catches it separately.
+const I2P_RE = /\b[a-z2-7]{52}\.b32\.i2p\b/i;
 const IPV4_RE = /\b(?:25[0-5]|2[0-4]\d|[01]?\d{1,2})(?:\.(?:25[0-5]|2[0-4]\d|[01]?\d{1,2})){3}\b/;
 const IPV6_RE = /\b(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{0,4}\b/i;
 
@@ -519,7 +525,11 @@ function classifyNameValue(parsed, rawValue) {
 		tags.add("nostr");
 	}
 
-	// I2P — a `i2p` key, or a b32.i2p host anywhere in the strings.
+	// I2P — an `i2p` key, or a proper `<52-char-b32>.b32.i2p` destination
+	// anywhere in the strings. Bare `.i2p` labels are ignored: too many names
+	// (all 118 of the `i2p/*` squatter namespace) carry contact prose like
+	// "Contact foo@mail.i2p or foo@i2pmail.org about acquiring this name"
+	// which is not an I2P service pointer.
 	if ((hasJson && _hasKeyDeep(parsed, (k) => k === "i2p")) ||
 		I2P_RE.test(haystack)) {
 		tags.add("i2p");
@@ -614,7 +624,7 @@ const FILTER_DESCRIPTIONS = {
 	tls: "Names that publish TLSA records (ifa-0001 §tls). The `tls` field is an array of `[usage, selector, mtype, hash]` tuples used to pin a host's TLS certificate via Namecoin instead of a public CA. Used by .bit relays for DANE TLS pinning.",
 	ip: "Names that publish at least one IP address (`ip` / `ip4` / `ip6` field per ifa-0001, or a literal address anywhere in the value). Combines A and AAAA for backwards compat.",
 	nostr: "Names that publish a Nostr identity — either a single `nostr.pubkey` (NameID-style) or a multi-identity `nostr.names` map for NIP-05 delegation across subdomains.",
-	i2p: "Names that publish an I2P address — either an `i2p` field or a `.b32.i2p` host embedded in the value.",
+	i2p: "Names that publish an I2P address — either an `i2p` field or a full `<b32>.b32.i2p` destination embedded in the value. Bare `.i2p` labels in prose (e.g. contact addresses like `foo@mail.i2p`) do NOT match.",
 	a: "A — IPv4 address mapping (ifa-0001 `ip` field). Maps a name to one or more IPv4 addresses.",
 	aaaa: "AAAA — IPv6 address mapping (ifa-0001 `ip6` field). Maps a name to one or more IPv6 addresses.",
 	cname: "CNAME — Canonical name alias (ifa-0001 `alias` / `translate`). Redirects this name's resolution to another name.",
