@@ -1659,9 +1659,12 @@ async function expandNameLifecycle(name, history, { coreApi = null } = {}) {
 	// fresh-cycle openers are:
 	//   - row 0 (always; we have to figure out whether it's a firstupdate
 	//     or a mid-cycle update),
-	//   - any row whose height jumped more than NAME_EXPIRATION_DEPTH blocks
+	//   - any row whose height jumped NAME_EXPIRATION_DEPTH or more blocks
 	//     past its predecessor (the name MUST have expired in between, so
-	//     the later row HAS to be a fresh `name_firstupdate`).
+	//     the later row HAS to be a fresh `name_firstupdate`). A gap of
+	//     exactly NAME_EXPIRATION_DEPTH means the name expired at the same
+	//     block the later tx landed; only a firstupdate (re-registration)
+	//     is valid at that height, a name_update would fail consensus.
 	//
 	// We tx-verify each candidate. When the on-chain op is genuinely
 	// `name_firstupdate`, we open a new cycle at that row and walk its vin
@@ -1671,7 +1674,7 @@ async function expandNameLifecycle(name, history, { coreApi = null } = {}) {
 	for (let i = 1; i < sorted.length; i++) {
 		const h0 = sorted[i - 1].height;
 		const h1 = sorted[i].height;
-		if (typeof h0 === "number" && typeof h1 === "number" && (h1 - h0) > NAME_EXPIRATION_DEPTH) {
+		if (typeof h0 === "number" && typeof h1 === "number" && (h1 - h0) >= NAME_EXPIRATION_DEPTH) {
 			boundaryIdx.push(i);
 		}
 	}
