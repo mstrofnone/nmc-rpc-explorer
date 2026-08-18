@@ -211,6 +211,45 @@ module.exports = {
 		"walletlock",
 		"walletpassphrase",
 		"walletpassphrasechange",
+
+		// Namecoin name operations: on a node with hot wallets these can
+		// spend name-fee balance (name_new) and update/transfer names the
+		// wallet controls (name_firstupdate / name_update / name_autoregister).
+		// Never safe to expose via an unauthenticated web RPC terminal.
+		"name_new",
+		"name_firstupdate",
+		"name_update",
+		"name_autoregister",
+		"name_list",
+		"name_pending",
+
+		// Raw-transaction broadcast / construction: sendrawtransaction is the
+		// canonical "push a signed tx" vector; the PSBT/rawtx helpers are the
+		// construction pipeline that ends in a broadcast.
+		"sendrawtransaction",
+		"testmempoolaccept",
+		"createrawtransaction",
+		"fundrawtransaction",
+		"combinerawtransaction",
+		"decodepsbt",
+		"combinepsbt",
+		"finalizepsbt",
+		"utxoupdatepsbt",
+		"walletcreatefundedpsbt",
+		"walletprocesspsbt",
+
+		// Wallet lifecycle: loading/unloading arbitrary wallets by path is a
+		// filesystem-side-effect operation and must not be web-reachable.
+		"loadwallet",
+		"unloadwallet",
+
+		// Expensive scans / DoS vectors: gettxoutsetinfo is ~88s/call on a
+		// Namecoin node, scantxoutset and scanblocks are unbounded, and
+		// getblocktemplate ties up the miner's block-assembly path.
+		"gettxoutsetinfo",
+		"scantxoutset",
+		"scanblocks",
+		"getblocktemplate",
 	],
 
 	addressApi: process.env.BTCEXP_ADDRESS_API,

@@ -586,7 +586,14 @@ function getRpcDataWithParams(request, verifyingConnection=false) {
 			} catch (err) {
 				err.userData = {request:request};
 
-				utils.logError("RpcError-002", err, {request:`${request.method}${request.parameters ? ("(" + JSON.stringify(request.parameters) + ")") : ""}`});
+				// Log only the method name and the node's error code, not the
+				// parameter values: for name_show / name_history / getrawtransaction
+				// the parameters are the user's search input, and persisting them
+				// to disk alongside the error is a privacy leak (see
+				// explorelogs.txt). The full request object is still attached to
+				// err.userData for the in-process error page, which is shown only
+				// to the requester.
+				utils.logError("RpcError-002", err, {request:request.method, rpcErrorCode:(err && err.code)});
 
 				logStats(request.method, true, new Date().getTime() - startTime, false);
 

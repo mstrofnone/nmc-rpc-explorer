@@ -565,7 +565,27 @@ function parseNameIdFields(parsedValue) {
 		push("email", "Email", parsedValue.email, "link", `mailto:${parsedValue.email}`);
 	}
 	if (typeof parsedValue.www === "string") {
-		push("www", "Website", parsedValue.www, "link", parsedValue.www);
+		// Whitelist http(s):// only. The raw value is attacker-controlled
+		// on-chain data, and Pug's attribute escaping does NOT scheme-filter:
+		// a `www = "javascript:fetch(...)"` value would render as a working
+		// javascript: href. Anything that doesn't parse as an absolute
+		// http(s) URL is downgraded to plain (non-linkified) text. Bare
+		// hostnames ("example.com") are prefixed with https:// so the common
+		// case still links.
+		const rawWww = parsedValue.www.trim();
+		let safeHref = null;
+
+		if (/^https?:\/\//i.test(rawWww)) {
+			safeHref = rawWww;
+		} else if (/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}(:[0-9]+)?(\/\S*)?$/i.test(rawWww)) {
+			safeHref = `https://${rawWww}`;
+		}
+
+		if (safeHref) {
+			push("www", "Website", rawWww, "link", safeHref);
+		} else {
+			push("www", "Website", rawWww, "text");
+		}
 	}
 	if (typeof parsedValue.bitcoin === "string") push("bitcoin", "Bitcoin address", parsedValue.bitcoin, "mono");
 	if (typeof parsedValue.namecoin === "string") push("namecoin", "Namecoin address", parsedValue.namecoin, "mono");

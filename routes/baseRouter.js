@@ -504,6 +504,13 @@ router.get("/blocks", asyncHandler(async (req, res, next) => {
 
 		if (req.query.limit) {
 			limit = parseInt(req.query.limit);
+
+			// Cap page size on demo/privacy sites: an uncapped limit turns
+			// one HTTP request into thousands of getblock RPC calls, and the
+			// request-count rate limiter sees it as a single request.
+			if ((config.demoSite || config.privacyMode) && limit > config.site.browseBlocksPageSize) {
+				limit = config.site.browseBlocksPageSize;
+			}
 		}
 
 		if (req.query.offset) {
@@ -632,6 +639,11 @@ router.get("/xyzpub/:extendedPubkey", asyncHandler(async (req, res, next) => {
 		let limit = 20;
 		if (req.query.limit) {
 			limit = parseInt(req.query.limit);
+
+			// Cap page size on demo/privacy sites (same DoS vector as /blocks).
+			if ((config.demoSite || config.privacyMode) && limit > 100) {
+				limit = 100;
+			}
 		}
 		res.locals.limit = limit;
 
@@ -1875,10 +1887,27 @@ router.get("/next-halving", asyncHandler(async (req, res, next) => {
 	}
 }));
 
+// RPC Terminal / Browser execute arbitrary JSON-RPC against the backing
+// node. On a Namecoin node with hot wallets this includes name_new /
+// name_firstupdate / name_update / sendrawtransaction, so these routes
+// must NEVER be reachable without authentication. Demo mode is not a
+// reason to open them up: demo mode only hides *costs*, it must not
+// disable *auth*. Hard-disable on demo/privacy sites; otherwise
+// require an authenticated session.
+const rpcToolsDisabled = (config.demoSite || config.privacyMode);
+
 router.get("/rpc-terminal", function(req, res, next) {
-	if (!config.demoSite && !req.authenticated) {
-		res.send("RPC Terminal / Browser require authentication. Set an authentication password via the 'BTCEXP_BASIC_AUTH_PASSWORD' environment variable (see .env-sample file for more info).");
-		
+	if (rpcToolsDisabled) {
+		res.status(403).send("RPC Terminal / Browser are disabled on this site.");
+
+		next();
+
+		return;
+	}
+
+	if (!req.authenticated) {
+		res.status(401).send("RPC Terminal / Browser require authentication. Set an authentication password via the 'BTCEXP_BASIC_AUTH_PASSWORD' environment variable (see .env-sample file for more info).");
+
 		next();
 
 		return;
@@ -1890,8 +1919,16 @@ router.get("/rpc-terminal", function(req, res, next) {
 });
 
 router.post("/rpc-terminal", asyncHandler(async (req, res, next) => {
-	if (!config.demoSite && !req.authenticated) {
-		res.send("RPC Terminal / Browser require authentication. Set an authentication password via the 'BTCEXP_BASIC_AUTH_PASSWORD' environment variable (see .env-sample file for more info).");
+	if (rpcToolsDisabled) {
+		res.status(403).send("RPC Terminal / Browser are disabled on this site.");
+
+		next();
+
+		return;
+	}
+
+	if (!req.authenticated) {
+		res.status(401).send("RPC Terminal / Browser require authentication. Set an authentication password via the 'BTCEXP_BASIC_AUTH_PASSWORD' environment variable (see .env-sample file for more info).");
 
 		next();
 
@@ -1950,8 +1987,16 @@ router.post("/rpc-terminal", asyncHandler(async (req, res, next) => {
 }));
 
 router.get("/rpc-browser", asyncHandler(async (req, res, next) => {
-	if (!config.demoSite && !req.authenticated) {
-		res.send("RPC Terminal / Browser require authentication. Set an authentication password via the 'BTCEXP_BASIC_AUTH_PASSWORD' environment variable (see .env-sample file for more info).");
+	if (rpcToolsDisabled) {
+		res.status(403).send("RPC Terminal / Browser are disabled on this site.");
+
+		next();
+
+		return;
+	}
+
+	if (!req.authenticated) {
+		res.status(401).send("RPC Terminal / Browser require authentication. Set an authentication password via the 'BTCEXP_BASIC_AUTH_PASSWORD' environment variable (see .env-sample file for more info).");
 
 		next();
 

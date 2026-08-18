@@ -1616,10 +1616,18 @@ expressApp.use(function(req, res, next) {
 
 const sharedErrorHandler = (req, err) => {
 	if (err && err.message && err.message.includes("Not Found")) {
-		const path = err.toString().substring(err.toString().lastIndexOf(" ") + 1);
+		// Log req.path (no query string) rather than the raw req.url baked
+		// into err.message: the query string is where user search input
+		// lives, and persisting it to disk alongside the visitor's IP and
+		// user-agent is a privacy leak (see explorelogs.txt). Truncate to
+		// bound log-line size against pathological paths.
+		const path = (req.path || "").substring(0, 120);
 		const userAgent = req.headers['user-agent'];
 		const crawler = utils.getCrawlerFromUserAgentString(userAgent);
-		const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress; 
+		// req.ip is trust-proxy-aware; the raw x-forwarded-for header is
+		// client-spoofable on direct-to-3002 requests and would let an
+		// attacker forge the IP attributed to their own probes.
+		const ip = req.ip;
 
 		const attributes = { path:path };
 
