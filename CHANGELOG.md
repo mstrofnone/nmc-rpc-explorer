@@ -1,3 +1,17 @@
+##### nmc-3.6.35
+###### 2026-08-21
+
+**Latest Blocks: new λ column showing Poisson probability of block age.**
+
+Each row in the Latest Blocks table (homepage and `/blocks`) now shows the
+Poisson CDF of the block's age: `P(N ≥ 1) = 1 − e^(−t/600s)`, where `t` is
+the block age in seconds and 600s is the Namecoin target block interval.
+Reads as "probability at least one block should have been mined by now" —
+0% for a brand-new block, ~63% at 10 minutes, ~95% at 30 minutes.
+
+Color coding: ≥95% is red (overdue), ≥80% is yellow, below that is default.
+The λ column header has a tooltip explaining the formula.
+
 ##### nmc-3.6.34
 ###### 2026-07-03
 
