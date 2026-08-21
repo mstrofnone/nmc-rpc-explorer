@@ -13,7 +13,7 @@
 				th.text-end.text-card-highlight.fw-normal.text-uppercase Age
 
 				th.text-end.text-card-highlight.fw-normal.text-uppercase.d-none.d-sm-table-cell
-					span.border-dotted(title="<b>Poisson probability</b><br/>Probability that at least one block would have been mined by now, given the target 10-minute interval: <code>P(N ≥ 1) = 1 − e<sup>−t/600s</sup></code>. Higher percentages mean the block is more 'overdue' under a Poisson mining process.", data-bs-toggle="tooltip", data-bs-html="true") λ
+					span.border-dotted(title="<b>Poisson probability</b><br/>Probability that at least one block would have been mined within this block's actual time-to-mine (the gap to the previous block), given the target 10-minute interval: <code>P(N ≥ 1) = 1 − e<sup>−Δt/600s</sup></code>, where Δt is the inter-block gap. High percentages mean this block was 'overdue' relative to its predecessor; low percentages mean it arrived quickly.", data-bs-toggle="tooltip", data-bs-html="true") λ
 				
 				th.text-end.text-card-highlight.fw-normal.text-uppercase.d-none.d-sm-table-cell
 					span.border-dotted(title="<b>Time To Mine</b><br/>The time it took to mine this block after the previous block. <span class='text-success'>Fast</span> blocks (< 5min) and <span class='text-danger'>Slow</span> blocks (> 15min) are highlighted.", data-bs-toggle="tooltip", data-bs-html="true") TTM
@@ -102,18 +102,26 @@
 								+timeAgo(block.time, {outputCommas:false, agoText:false})
 
 						td.text-end.d-none.d-sm-table-cell
-							//- Poisson CDF: P(N >= 1) = 1 - exp(-t/600s), where t is the block age
-							//- in seconds and 600s is the Namecoin target block interval. Reads as
-							//- "probability at least one block should have been mined by now".
-							- var ageSeconds = Math.max(0, Math.floor(timeAgoTime / 1000));
-							- var poissonP = 1 - Math.exp(-ageSeconds / 600);
-							- var poissonPct = (poissonP * 100).toFixed(1);
-							- var poissonClass = "";
-							if (poissonP >= 0.95)
-								- poissonClass = "text-danger";
-							else if (poissonP >= 0.80)
-								- poissonClass = "text-warning";
-							span(class=poissonClass, title=`Age ${ageSeconds}s → P(N ≥ 1) = ${poissonPct}%`, data-bs-toggle="tooltip") #{poissonPct}%
+							//- Poisson CDF: P(N >= 1) = 1 - exp(-Δt/600s), where Δt is the
+							//- inter-block gap (this block's time minus the previous block's
+							//- time) and 600s is the Namecoin target block interval. Reads as
+							//- "probability at least one block should have been mined within
+							//- this gap". High % = block was overdue vs its predecessor.
+							if (timeDiff)
+								- var gapSeconds = Math.max(0, Math.floor(timeDiff.asSeconds()));
+								- var poissonP = 1 - Math.exp(-gapSeconds / 600);
+								- var poissonPct = (poissonP * 100).toFixed(1);
+								- var poissonClass = "";
+								if (poissonP >= 0.95)
+									- poissonClass = "text-danger";
+								else if (poissonP >= 0.80)
+									- poissonClass = "text-warning";
+								span(class=poissonClass, title=`Gap to previous block ${gapSeconds}s → P(N ≥ 1) = ${poissonPct}%`, data-bs-toggle="tooltip") #{poissonPct}%
+							else
+								if (block.height == 0)
+									small.border-dotted.text-muted(title="Not applicable: genesis block has no previous block to compare to.", data-bs-toggle="tooltip") N/A
+								else
+									small.border-dotted.text-muted(title="Not applicable: previous block is not in this page of results.", data-bs-toggle="tooltip") -
 
 						td.text-end.d-none.d-sm-table-cell
 							if (timeDiff)

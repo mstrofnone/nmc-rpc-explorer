@@ -1,3 +1,22 @@
+##### nmc-3.6.37
+###### 2026-08-21
+
+**λ column on Latest Blocks now uses inter-block gap, not age-from-now.**
+
+The Poisson probability in the λ column was previously computed against the
+block's age (time since the block was mined). That made every old block
+read ~100% because, relative to now, it's virtually certain at least one
+more block should have been mined since then — a cumulative reading, not
+a per-row one.
+
+The column now uses the block's actual time-to-mine (the gap to the
+previous block, same value the TTM column shows). Each row reads as
+"probability at least one block would have been mined within this
+inter-block gap under a Poisson process with λ = 1/600s". A fast block
+(short gap) shows a low percentage; a slow block (long gap) shows a high
+percentage. Rows with no previous block in the current page show `-`
+instead of a misleading number.
+
 ##### nmc-3.6.35
 ###### 2026-08-21
 
