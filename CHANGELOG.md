@@ -1,3 +1,35 @@
+##### nmc-3.6.36
+###### 2026-08-21
+
+**Fix: Recent Name Operations no longer shows `(name_new commitment)` for
+non-ASCII `name_firstupdate` ops.**
+
+`namecoind`'s daemon-wide `-nameencoding=` defaults to `ascii`, so any
+on-chain name carrying multi-byte UTF-8 (e.g. `ℕ𝕗/…`, emoji, CJK) comes
+back from `getrawtransaction` verbosity-2 as `nameOp.name: null` with
+`name_error: "invalid data for ascii"`. The homepage's Recent Name
+Operations tile then rendered the placeholder `(name_new commitment)`
+even though the op was a `name_firstupdate` with the name visible in the
+script hex.
+
+`collectNameOps` now recovers the name (and value) directly from
+`scriptPubKey.hex` when namecoind declines to decode them. Parses the
+Bitcoin-style push opcodes for `OP_NAME_FIRSTUPDATE` (name is push 1,
+rand push 2, value push 3) and `OP_NAME_UPDATE` (name push 1, value
+push 2), then UTF-8 decodes. `name_new` is unaffected by design — the
+on-chain data is a hash, not the name.
+
+Surfaces fixed: homepage Recent Name Operations tile, `/mempool-name-ops`,
+`/next-block` name-op panels, per-tx name-op panel on `/tx/<txid>`.
+
+The root cause is a namecoind config default, not an explorer bug. The
+alternative fix is `nameencoding=utf8` + `valueencoding=utf8` in
+`namecoin.conf` + a namecoind restart, which would fix every consumer of
+`getrawtransaction` at once but requires a maintenance window because the
+relay TLS resolver and nmcLightningService share the daemon. The
+explorer-side recovery is a strict improvement either way (works against
+any node, regardless of its `-nameencoding=`).
+
 ##### nmc-3.6.35
 ###### 2026-08-21
 

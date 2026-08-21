@@ -254,22 +254,154 @@ function collectNameOps(transactions) {
 			const out = tx.vout[i];
 			const nameOp = out && out.scriptPubKey && out.scriptPubKey.nameOp;
 			if (!nameOp) continue;
+			// namecoind returns name:null + name_error:"invalid data for ascii"
+			// whenever the on-chain name carries any non-ASCII byte (multi-byte
+			// UTF-8 like ℕ𝕗/…, emoji, CJK, etc.) and the daemon is running with
+			// the default -nameencoding=ascii. The raw name bytes are still in
+			// scriptPubKey.hex / .asm, so decode them ourselves as a fallback.
+			// Per-call encoding options don't exist for getrawtransaction — the
+			// encoding is locked at daemon startup via -nameencoding=.
+			let recoveredName = null;
+			let recoveredNameEncoding = null;
+			if (nameOp.name == null && out.scriptPubKey) {
+				const recovered = _recoverNameFromScript(out.scriptPubKey, nameOp.op);
+				if (recovered != null) {
+					recoveredName = recovered;
+					recoveredNameEncoding = "utf8";
+				}
+			}
+			// Same recovery for the value field. namecoind's -valueencoding=
+			// defaults to ascii too, so any non-ASCII value (UTF-8 text, JSON
+			// with é/ç/Ω/emoji/CJK) comes back as value:null + value_error.
+			let recoveredValue = null;
+			let recoveredValueEncoding = null;
+			if (nameOp.value == null && out.scriptPubKey) {
+				const recovered = _recoverValueFromScript(out.scriptPubKey, nameOp.op);
+				if (recovered != null) {
+					recoveredValue = recovered;
+					recoveredValueEncoding = "utf8";
+				}
+			}
 			ops.push({
 				txid: tx.txid,
 				blockhash: tx.blockhash || null,
 				blocktime: tx.blocktime || tx.time || null,
 				vout: i,
 				op: nameOp.op,
-				name: nameOp.name || null,
-				name_encoding: nameOp.name_encoding || null,
-				value: nameOp.value || null,
-				value_encoding: nameOp.value_encoding || null,
+				name: nameOp.name != null ? nameOp.name : recoveredName,
+				name_encoding: nameOp.name != null ? nameOp.name_encoding : recoveredNameEncoding,
+				value: nameOp.value != null ? nameOp.value : recoveredValue,
+				value_encoding: nameOp.value != null ? nameOp.value_encoding : recoveredValueEncoding,
 				hash: nameOp.hash || null,
 				rand: nameOp.rand || null,
 			});
 		}
 	}
 	return ops;
+}
+
+// Best-effort recovery of the name field from a name-op scriptPubKey when
+// namecoind declined to decode it (name:null + name_error about ascii).
+// Returns the UTF-8 decoded name string, or null if we can't parse the
+// script or the bytes aren't valid UTF-8.
+//
+// Script shapes (Namecoin consensus, src/names/main.cpp):
+//   name_new:        OP_NAME_NEW <hash> OP_2DROP <addr...>
+//   name_firstupdate: OP_NAME_FIRSTUPDATE <name> <rand> <value> OP_2DROP OP_2DROP <addr...>
+//   name_update:     OP_NAME_UPDATE <name> <value> OP_2DROP OP_2DROP <addr...>
+//
+// For name_new the name is hashed on-chain and unrecoverable — return null.
+// For the other two the name is the first data push after the opcode.
+function _recoverNameFromScript(scriptPubKey, op) {
+	if (!scriptPubKey || typeof scriptPubKey.hex !== "string") return null;
+	if (op !== "name_firstupdate" && op !== "name_update") return null;
+	const hex = scriptPubKey.hex;
+	// Expected opcode byte: 0x51 OP_NAME_NEW / 0x52 OP_NAME_FIRSTUPDATE /
+	// 0x53 OP_NAME_UPDATE. Then a push opcode for the name.
+	const expectedOpByte = op === "name_firstupdate" ? "52" : "53";
+	if (!hex.startsWith(expectedOpByte)) return null;
+	// Parse the first data push starting at byte offset 1. Handles
+	// OP_PUSHBYTES_N (0x01..0x4b), OP_PUSHDATA1 (0x4c), OP_PUSHDATA2 (0x4d).
+	// Names longer than 255 bytes are not valid under Namecoin consensus, so
+	// PUSHDATA2 is belt-and-braces.
+	const push = _readPushAt(hex, 2);
+	if (!push) return null;
+	const nameHex = push.data;
+	// Decode as UTF-8; bail if the bytes aren't clean UTF-8 (keeps binary
+	// garbage from rendering as mojibake).
+	const decoded = _tryDecodeHexAsUtf8(nameHex);
+	return decoded;
+}
+
+// Read a Bitcoin-style data push from `hex` starting at nibble-offset
+// `offsetNibbles` (byte offset * 2). Returns { data, nextOffsetNibbles } or
+// null on malformed input.
+function _readPushAt(hex, offsetNibbles) {
+	if (offsetNibbles + 2 > hex.length) return null;
+	const opByte = parseInt(hex.substr(offsetNibbles, 2), 16);
+	let len = 0;
+	let dataStart = offsetNibbles + 2;
+	if (opByte >= 0x01 && opByte <= 0x4b) {
+		len = opByte;
+	} else if (opByte === 0x4c) {
+		// OP_PUSHDATA1: next byte is the length
+		if (dataStart + 2 > hex.length) return null;
+		len = parseInt(hex.substr(dataStart, 2), 16);
+		dataStart += 2;
+	} else if (opByte === 0x4d) {
+		// OP_PUSHDATA2: next 2 bytes little-endian are the length
+		if (dataStart + 4 > hex.length) return null;
+		const lo = parseInt(hex.substr(dataStart, 2), 16);
+		const hi = parseInt(hex.substr(dataStart + 2, 2), 16);
+		len = lo | (hi << 8);
+		dataStart += 4;
+	} else {
+		return null;
+	}
+	const dataEnd = dataStart + len * 2;
+	if (dataEnd > hex.length) return null;
+	return { data: hex.substring(dataStart, dataEnd), nextOffsetNibbles: dataEnd };
+}
+
+// Recover the value field from a name-op scriptPubKey. Mirrors
+// _recoverNameFromScript but reads the LAST name-op data push (the value)
+// instead of the first. Layout:
+//   name_firstupdate: OP_NAME_FIRSTUPDATE <name> <rand> <value> OP_2DROP OP_2DROP ...
+//   name_update:      OP_NAME_UPDATE <name> <value> OP_2DROP OP_2DROP ...
+//   name_new:         OP_NAME_NEW <hash> OP_2DROP ...  (no value field)
+function _recoverValueFromScript(scriptPubKey, op) {
+	if (!scriptPubKey || typeof scriptPubKey.hex !== "string") return null;
+	const hex = scriptPubKey.hex;
+	let offset = 0;
+	if (op === "name_firstupdate") {
+		if (!hex.startsWith("52")) return null;
+		offset = 2;
+		// skip name
+		const p1 = _readPushAt(hex, offset);
+		if (!p1) return null;
+		offset = p1.nextOffsetNibbles;
+		// skip rand
+		const p2 = _readPushAt(hex, offset);
+		if (!p2) return null;
+		offset = p2.nextOffsetNibbles;
+		// value
+		const p3 = _readPushAt(hex, offset);
+		if (!p3) return null;
+		return _tryDecodeHexAsUtf8(p3.data);
+	}
+	if (op === "name_update") {
+		if (!hex.startsWith("53")) return null;
+		offset = 2;
+		// skip name
+		const p1 = _readPushAt(hex, offset);
+		if (!p1) return null;
+		offset = p1.nextOffsetNibbles;
+		// value
+		const p2 = _readPushAt(hex, offset);
+		if (!p2) return null;
+		return _tryDecodeHexAsUtf8(p2.data);
+	}
+	return null;
 }
 
 // Best-effort pretty rendering for a value, returns
