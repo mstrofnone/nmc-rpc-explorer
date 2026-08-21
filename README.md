@@ -2,17 +2,24 @@
 
 A Namecoin-flavoured fork of [btc-rpc-explorer](https://github.com/janoside/btc-rpc-explorer) with first-class support for `name_*` operations.
 
+**Canonical source (Nostr/ngit):** [gitworkshop.dev/npub1gvv9ahktvavf9qjtrgm62le7gplmmchd5usp5wpfhr85hf79kncqj8xchs/relay.ngit.dev/nmc-rpc-explorer](https://gitworkshop.dev/npub1gvv9ahktvavf9qjtrgm62le7gplmmchd5usp5wpfhr85hf79kncqj8xchs/relay.ngit.dev/nmc-rpc-explorer)
+
+**GitHub mirror:** [github.com/namecoin/nmc-rpc-explorer](https://github.com/namecoin/nmc-rpc-explorer) (may lag behind the ngit repo)
+
 When `BTCEXP_COIN=NMC` is set the explorer:
 
 - talks to your `namecoind` over RPC,
 - decodes `name_new`, `name_firstupdate` and `name_update` outputs (using namecoind's own `scriptPubKey.nameOp` field) and shows them on the transaction page,
 - exposes a `/name/<name>` view that pretty-prints the value (auto-detected JSON for `d/`/`id/` records),
 - ships a homepage "Recent Name Operations" tile,
-- adds a `/names` browser backed by `name_scan`.
+- adds a `/names` browser backed by `name_scan`,
+- shows a `/nft` page indexing on-chain files stored as chunked `nft/*` name updates,
+- displays a Poisson probability (λ) column on Latest Blocks showing the likelihood each block's inter-block gap would occur by chance,
+- emits an `Onion-Location` header for Tor Browser users when `BTCEXP_ONION_LOCATION` is configured.
 
 With `BTCEXP_COIN=BTC` the project still behaves identically to upstream `btc-rpc-explorer`.
 
-## Self-Hosted Bitcoin explorer for everyone running [Bitcoin Core](https://github.com/bitcoin/bitcoin).
+## Self-Hosted Namecoin explorer for everyone running [Namecoin Core](https://github.com/namecoin/namecoin-core).
 
 [![npm version][npm-ver-img]][npm-ver-url] [![NPM downloads][npm-dl-alltime-img]][npm-dl-url]
 
@@ -22,28 +29,41 @@ With `BTCEXP_COIN=BTC` the project still behaves identically to upstream `btc-rp
 
 ![homepage](./public/img/screenshots/homepage.png)
 
+*The Namecoin Explorer homepage showing Network Summary, Recent Name Operations, and Latest Blocks with the λ (Poisson probability) column.*
+
+[![Source on gitworkshop.dev](./public/img/screenshots/source-code-gitworkshop.png)](https://gitworkshop.dev/npub1gvv9ahktvavf9qjtrgm62le7gplmmchd5usp5wpfhr85hf79kncqj8xchs/relay.ngit.dev/nmc-rpc-explorer)
+
+*Browse the source code on [gitworkshop.dev](https://gitworkshop.dev/npub1gvv9ahktvavf9qjtrgm62le7gplmmchd5usp5wpfhr85hf79kncqj8xchs/relay.ngit.dev/nmc-rpc-explorer) (Nostr/ngit)*
 
 
-This is a self-hosted explorer for the Bitcoin blockchain, driven by RPC calls to your own [Bitcoin](https://github.com/bitcoin/bitcoin) node. It is easy to run and can be connected to other tools (like Electrum servers) to achieve a full-featured explorer.
 
-Whatever reasons you may have for running a full node (trustlessness, technical curiosity, supporting the network, etc) it's valuable to appreciate the *fullness* of your node. With this explorer, you can explore not just the blockchain database, but also explore all of the functional capabilities of your own node.
+This is a self-hosted explorer for the Namecoin blockchain, driven by RPC calls to your own [Namecoin Core](https://github.com/namecoin/namecoin-core) node. It is easy to run and can be connected to other tools (like Electrum servers) to achieve a full-featured explorer.
 
-Live demos:
+Whatever reasons you may have for running a full node (trustlessness, technical curiosity, supporting the network, etc) it's valuable to appreciate the *fullness* of your node. With this explorer, you can explore not just the blockchain database, but also explore all of the functional capabilities of your own node — including Namecoin's unique `name_*` operations for decentralized DNS and identity.
 
-* [BitcoinExplorer.org](https://bitcoinexplorer.org) / [testnet](https://testnet.bitcoinexplorer.org) / [signet](https://signet.bitcoinexplorer.org)
+Live demo:
+
+* [explore.testls.bit](https://explore.testls.bit/) / [clearnet](http://23.158.233.10:3002/) / [.onion](http://6cbn4rskfdr647otej7gpqlmpqcmj723vg2eoeuu7ljbwu6cpdebozyd.onion:8080/)
 
 
 # Features
 
 * Network Summary dashboard
 * View details of blocks, transactions, and addresses
+* **Namecoin name operations**: decode `name_new`, `name_firstupdate`, `name_update` on transaction pages
+* **Name browser**: `/names` index backed by `name_scan` with Oldest Active Names section
+* **Name detail pages**: `/name/<name>` with full lifecycle history, expiration tracking, and Raw JSON tab
+* **Recent Name Operations** homepage tile
+* **NFT Files**: `/nft` page indexing on-chain files stored as chunked `nft/*` name updates
+* **Poisson λ column**: Latest Blocks shows probability each inter-block gap would occur by chance
 * Analysis tools for viewing stats on blocks, transactions, and miner activity
 * JSON REST API
-* See raw JSON content from bitcoind used to generate most pages
-* Search by transaction ID, block hash/height, and address
+* See raw JSON content from namecoind used to generate most pages
+* Search by transaction ID, block hash/height, address, or `d/name`
 * Optional transaction history for addresses by querying from Electrum-protocol servers (e.g. Electrs, ElectrumX), blockchain.com, blockchair.com, or blockcypher.com
 * Mempool summary, with fee, size, and age breakdowns
 * RPC command browser and terminal
+* **Tor support**: `Onion-Location` header emission when `BTCEXP_ONION_LOCATION` is set
 
 
 # Changelog / Release notes
@@ -55,8 +75,8 @@ See [CHANGELOG.md](/CHANGELOG.md).
 
 ## Prerequisites
 
-1. Install `Bitcoin Core` - [instructions](https://bitcoin.org/en/full-node). Ensure that `Bitcoin Core`'s' RPC server is enabled (`server=1`).
-2. Allow `Bitcoin Core` to synchronize with the Bitcoin network (you *can* use this tool while sychronizing, but some pages may fail).
+1. Install `Namecoin Core` - [instructions](https://github.com/namecoin/namecoin-core). Ensure that `namecoind`'s RPC server is enabled (`server=1`).
+2. Allow `Namecoin Core` to synchronize with the Namecoin network (you *can* use this tool while synchronizing, but some pages may fail).
 3. Install Node.js (18+ required, 22+ recommended).
 
 ### Note about pruning and indexing configurations
@@ -85,10 +105,17 @@ npm install -g btc-rpc-explorer
 btc-rpc-explorer
 ```
 
-#### Run from source:
+#### Run from source (ngit/Nostr):
 
-1. `git clone https://github.com/janoside/btc-rpc-explorer`
-2. `cd btc-rpc-explorer`
+1. `git clone https://gitworkshop.dev/npub1gvv9ahktvavf9qjtrgm62le7gplmmchd5usp5wpfhr85hf79kncqj8xchs/relay.ngit.dev/nmc-rpc-explorer`
+2. `cd nmc-rpc-explorer`
+3. `npm install`
+4. `npm start`
+
+#### Run from source (GitHub mirror):
+
+1. `git clone https://github.com/namecoin/nmc-rpc-explorer`
+2. `cd nmc-rpc-explorer`
 3. `npm install`
 4. `npm start`
 

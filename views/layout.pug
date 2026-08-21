@@ -321,7 +321,9 @@ html(lang="en")
 								h6 Project
 
 								.ms-2
-									a.footer-link(href="https://github.com/namecoin/nmc-rpc-explorer") github.com/namecoin/nmc-rpc-explorer
+									a.footer-link(href="https://gitworkshop.dev/npub1gvv9ahktvavf9qjtrgm62le7gplmmchd5usp5wpfhr85hf79kncqj8xchs/relay.ngit.dev/nmc-rpc-explorer") gitworkshop.dev/nmc-rpc-explorer
+									div.mt-1
+										a.footer-link(href="https://github.com/namecoin/nmc-rpc-explorer") github.com/namecoin/nmc-rpc-explorer
 
 						.mb-4
 							h6 #{(config.coin === "NMC") ? "Upstream Project" : "Project"}
@@ -348,13 +350,16 @@ html(lang="en")
 								if (sourcecodeVersion)
 									br
 									span commit: 
-										a.footer-link(href=`https://github.com/janoside/btc-rpc-explorer/commit/${sourcecodeVersion}`) #{sourcecodeVersion}
+										a.footer-link(href=`https://gitworkshop.dev/npub1gvv9ahktvavf9qjtrgm62le7gplmmchd5usp5wpfhr85hf79kncqj8xchs/relay.ngit.dev/nmc-rpc-explorer/commit/${sourcecodeVersion}`) #{sourcecodeVersion}
 								
 								br
 								span released: #{sourcecodeDate}
 								span(style="font-size: 0.9em;")  (
 									a.footer-link(href="./changelog") changelog
 									span )
+								br
+								span source: 
+									a.footer-link(href="https://gitworkshop.dev/npub1gvv9ahktvavf9qjtrgm62le7gplmmchd5usp5wpfhr85hf79kncqj8xchs/relay.ngit.dev/nmc-rpc-explorer") gitworkshop.dev
 
 					.col-lg-3
 						//- The 'Public Demos' footer block is intended for the upstream

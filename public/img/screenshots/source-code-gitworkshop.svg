@@ -1,0 +1,16 @@
+<svg width="800" height="200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#1a1a2e;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#16213e;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="800" height="200" fill="url(#grad)" rx="8"/>
+  <text x="400" y="70" font-family="system-ui, -apple-system, sans-serif" font-size="28" fill="#e94560" text-anchor="middle" font-weight="bold">Source Code</text>
+  <text x="400" y="110" font-family="system-ui, -apple-system, sans-serif" font-size="18" fill="#eaeaea" text-anchor="middle">gitworkshop.dev/npub1gvv9.../nmc-rpc-explorer</text>
+  <text x="400" y="150" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#7fffdb" text-anchor="middle">
+    <tspan fill="#7fffdb">Nostr/ngit</tspan>
+    <tspan fill="#eaeaea"> • Decentralized Git • </tspan>
+    <tspan fill="#7fffdb">relay.ngit.dev</tspan>
+  </text>
+</svg>
