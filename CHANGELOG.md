@@ -1,3 +1,16 @@
+##### nmc-3.6.39
+###### 2026-08-21
+
+**Remove NFT Files from the Technical tools section.**
+
+The `NFT Files` entry (item 21) has been dropped from the `Technical`
+tool section in `app/config.js`. The `/nft` route and page remain
+functional and reachable directly; it just no longer appears in the
+Technical dropdown / Tools card. The entry is kept in `siteTools` so
+any existing deep-links / references continue to resolve.
+
+---
+
 ##### nmc-3.6.38
 ###### 2026-08-21
 
