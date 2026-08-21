@@ -613,7 +613,9 @@ function parseNameIdFields(parsedValue) {
 // ---------------------------------------------------------------------------
 
 const ONION_RE = /\b[a-z2-7]{16,56}\.onion\b/i;
-const I2P_RE = /\b[a-z2-7]{52,60}\.b32\.i2p\b|\.i2p\b/i;
+// I2P: match valid b32.i2p addresses only (52-60 base32 chars + .b32.i2p)
+// Do NOT match bare ".i2p" mentions in text (e.g. "mail.i2p" in contact info)
+const I2P_RE = /\b[a-z2-7]{52,60}\.b32\.i2p\b/i;
 const IPV4_RE = /\b(?:25[0-5]|2[0-4]\d|[01]?\d{1,2})(?:\.(?:25[0-5]|2[0-4]\d|[01]?\d{1,2})){3}\b/;
 const IPV6_RE = /\b(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{0,4}\b/i;
 
@@ -693,7 +695,9 @@ function classifyNameValue(parsed, rawValue) {
 		tags.add("nostr");
 	}
 
-	// I2P — a `i2p` key, or a b32.i2p host anywhere in the strings.
+	// I2P — a `i2p` key in JSON, or a valid b32.i2p host (52-60 base32 chars).
+	// Does NOT match bare ".i2p" mentions in text (e.g. "mail.i2p" in contact
+	// info) — those are not actual I2P addresses.
 	if ((hasJson && _hasKeyDeep(parsed, (k) => k === "i2p")) ||
 		I2P_RE.test(haystack)) {
 		tags.add("i2p");
@@ -788,7 +792,7 @@ const FILTER_DESCRIPTIONS = {
 	tls: "Names that publish TLSA records (ifa-0001 §tls). The `tls` field is an array of `[usage, selector, mtype, hash]` tuples used to pin a host's TLS certificate via Namecoin instead of a public CA. Used by .bit relays for DANE TLS pinning.",
 	ip: "Names that publish at least one IP address (`ip` / `ip4` / `ip6` field per ifa-0001, or a literal address anywhere in the value). Combines A and AAAA for backwards compat.",
 	nostr: "Names that publish a Nostr identity — either a single `nostr.pubkey` (NameID-style) or a multi-identity `nostr.names` map for NIP-05 delegation across subdomains.",
-	i2p: "Names that publish an I2P address — either an `i2p` field or a `.b32.i2p` host embedded in the value.",
+	i2p: "Names that publish an I2P address — either an `i2p` field in the JSON value or a valid `.b32.i2p` host (52-60 base32 characters). Does not match names that merely mention '.i2p' in text.",
 	a: "A — IPv4 address mapping (ifa-0001 `ip` field). Maps a name to one or more IPv4 addresses.",
 	aaaa: "AAAA — IPv6 address mapping (ifa-0001 `ip6` field). Maps a name to one or more IPv6 addresses.",
 	cname: "CNAME — Canonical name alias (ifa-0001 `alias` / `translate`). Redirects this name's resolution to another name.",

@@ -1,3 +1,22 @@
+##### nmc-3.6.41
+###### 2026-08-22
+
+**Fix I2P filter false positives on `/names/filter/i2p`.**
+
+The I2P value-shape filter was matching any name whose value contained
+the substring `.i2p` anywhere in text, causing false positives for
+names like `i2p/bl` whose value is just contact info mentioning
+`mail.i2p` or `i2pmail.org`.
+
+The filter now only matches:
+- Names with an actual `i2p` key in their JSON value
+- Names with a valid `.b32.i2p` address (52-60 base32 chars)
+
+Names that merely mention `.i2p` in descriptive text are no longer
+included.
+
+---
+
 ##### nmc-3.6.40
 ###### 2026-08-21
 
