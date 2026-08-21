@@ -1,3 +1,35 @@
+##### nmc-3.6.38
+###### 2026-08-21
+
+**Docs and footer now point at the ngit repo on gitworkshop.dev as canonical source.**
+
+The README and the App Details / Project sections in the site footer were
+still referencing upstream `btc-rpc-explorer` in places that no longer
+matched what this fork ships. Three things changed:
+
+- **README.md rewrite**: canonical source header now lists the
+  gitworkshop.dev ngit URL as primary and GitHub as a mirror that may lag
+  behind. Live demo URLs point to the actual deployment
+  (`explore.testls.bit`, `23.158.233.10:3002`, and the .onion mirror).
+  Features list rewritten to reflect what actually ships: NFT Files page,
+  Poisson λ column, Onion-Location header, name lifecycle/expiration
+  tracking, Raw JSON tabs, `d/name` search, etc.
+
+- **Footer commit link fixed**: the App Details block used to link the
+  short commit hash to `github.com/janoside/btc-rpc-explorer/commit/<hash>`,
+  which never resolved because the hash belongs to this fork, not
+  upstream. The link now points at `gitworkshop.dev/<npub>/relay.ngit.dev/nmc-rpc-explorer/commit/<hash>`,
+  which does resolve. A new `source: gitworkshop.dev` line was added under
+  `released:` in the same block.
+
+- **Footer Project section reorder**: for the NMC coin the Project box
+  now shows the gitworkshop.dev URL first and the GitHub mirror below it
+  (was GitHub-only).
+
+Also added a `source-code-gitworkshop.png` banner under
+`public/img/screenshots/` and referenced it from the README as a clickable
+link to the ngit repo, alongside the existing homepage screenshot.
+
 ##### nmc-3.6.37
 ###### 2026-08-21
 
