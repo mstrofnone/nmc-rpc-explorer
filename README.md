@@ -4,7 +4,7 @@ A Namecoin-flavoured fork of [btc-rpc-explorer](https://github.com/janoside/btc-
 
 **Canonical source (Nostr/ngit):** [gitworkshop.dev/npub1gvv9ahktvavf9qjtrgm62le7gplmmchd5usp5wpfhr85hf79kncqj8xchs/relay.ngit.dev/nmc-rpc-explorer](https://gitworkshop.dev/npub1gvv9ahktvavf9qjtrgm62le7gplmmchd5usp5wpfhr85hf79kncqj8xchs/relay.ngit.dev/nmc-rpc-explorer)
 
-**GitHub mirror:** [github.com/namecoin/nmc-rpc-explorer](https://github.com/namecoin/nmc-rpc-explorer) (may lag behind the ngit repo)
+**Source (ngit):** [gitworkshop.dev/npub1gvv9ahktvavf9qjtrgm62le7gplmmchd5usp5wpfhr85hf79kncqj8xchs/relay.ngit.dev/nmc-rpc-explorer](https://gitworkshop.dev/npub1gvv9ahktvavf9qjtrgm62le7gplmmchd5usp5wpfhr85hf79kncqj8xchs/relay.ngit.dev/nmc-rpc-explorer)
 
 When `BTCEXP_COIN=NMC` is set the explorer:
 
@@ -108,13 +108,6 @@ btc-rpc-explorer
 #### Run from source (ngit/Nostr):
 
 1. `git clone https://gitworkshop.dev/npub1gvv9ahktvavf9qjtrgm62le7gplmmchd5usp5wpfhr85hf79kncqj8xchs/relay.ngit.dev/nmc-rpc-explorer`
-2. `cd nmc-rpc-explorer`
-3. `npm install`
-4. `npm start`
-
-#### Run from source (GitHub mirror):
-
-1. `git clone https://github.com/namecoin/nmc-rpc-explorer`
 2. `cd nmc-rpc-explorer`
 3. `npm install`
 4. `npm start`

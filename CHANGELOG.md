@@ -1,3 +1,30 @@
+##### nmc-3.6.40
+###### 2026-08-21
+
+**Replace all live references to `github.com/namecoin/nmc-rpc-explorer`
+with the canonical ngit URL on gitworkshop.dev.**
+
+The GitHub mirror URL was still surfaced in a few places even after
+nmc-3.6.38 declared the ngit repo canonical. All of those live
+surfaces now point at
+`https://gitworkshop.dev/npub1gvv9ahktvavf9qjtrgm62le7gplmmchd5usp5wpfhr85hf79kncqj8xchs/relay.ngit.dev/nmc-rpc-explorer`
+instead:
+
+- `README.md`: `**GitHub mirror:**` line replaced with a `**Source
+  (ngit):**` line; the `Run from source (GitHub mirror)` block was
+  removed (the ngit `git clone` instructions right above it are the
+  canonical path now).
+- `views/index.pug`: the homepage "View Source" button now links to
+  the ngit repo.
+- `views/layout.pug`: the footer's `Project` section no longer has a
+  secondary GitHub-mirror line under the gitworkshop.dev link;
+  gitworkshop.dev is now the sole entry.
+
+Historical CHANGELOG entries that reference the old GitHub URL are
+intentionally left untouched.
+
+---
+
 ##### nmc-3.6.39
 ###### 2026-08-21
 

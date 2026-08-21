@@ -312,18 +312,16 @@ html(lang="en")
 				
 				.row.mt-4.mb-6
 					.col-lg-3
-						//- On Namecoin instances we surface this fork (namecoin/nmc-rpc-explorer)
-						//- as the primary "Project" entry, with the upstream
-						//- janoside/btc-rpc-explorer reframed as "Upstream Project"
-						//- right below it so credit + lineage stays visible.
+						//- On Namecoin instances we surface this fork's canonical ngit repo
+						//- (gitworkshop.dev/.../nmc-rpc-explorer) as the primary "Project"
+						//- entry, with the upstream janoside/btc-rpc-explorer reframed as
+						//- "Upstream Project" right below it so credit + lineage stays visible.
 						if (config.coin === "NMC")
 							.mb-4
 								h6 Project
 
 								.ms-2
 									a.footer-link(href="https://gitworkshop.dev/npub1gvv9ahktvavf9qjtrgm62le7gplmmchd5usp5wpfhr85hf79kncqj8xchs/relay.ngit.dev/nmc-rpc-explorer") gitworkshop.dev/nmc-rpc-explorer
-									div.mt-1
-										a.footer-link(href="https://github.com/namecoin/nmc-rpc-explorer") github.com/namecoin/nmc-rpc-explorer
 
 						.mb-4
 							h6 #{(config.coin === "NMC") ? "Upstream Project" : "Project"}
