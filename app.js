@@ -953,12 +953,19 @@ async function refreshRecentNameOps() {
 
 		const blocks = await coreApi.getBlocksByHeight(heights);
 		const txids = [];
+		const heightByTxid = new Map();
 		const toTxid = (entry) => (typeof entry === "string" ? entry : entry && entry.txid);
 		for (const b of blocks) {
 			if (!b || !Array.isArray(b.tx)) continue;
+			const blockHeight = (typeof b.height === "number") ? b.height : null;
 			for (let i = 1; i < b.tx.length && txids.length < 400; i++) {
 				const txid = toTxid(b.tx[i]);
-				if (txid) txids.push(txid);
+				if (txid) {
+					txids.push(txid);
+					if (blockHeight !== null && !heightByTxid.has(txid)) {
+						heightByTxid.set(txid, blockHeight);
+					}
+				}
 			}
 		}
 
@@ -981,10 +988,12 @@ async function refreshRecentNameOps() {
 			ops: opsAll.slice(0, limit).map((op) => ({
 				txid: op.txid, vout: op.vout, op: op.op, name: op.name,
 				valuePreview: op.value ? String(op.value).slice(0, 80) : null,
+				height: heightByTxid.has(op.txid) ? heightByTxid.get(op.txid) : null,
 			})),
 			pending: pendingAll.slice(0, limit).map((p) => ({
 				txid: p.txid, vout: p.vout, op: p.op, name: p.name || null,
 				valuePreview: p.value ? String(p.value).slice(0, 80) : null,
+				height: null,
 			})),
 			opsTotal: opsAll.length,
 			pendingTotal: pendingAll.length,

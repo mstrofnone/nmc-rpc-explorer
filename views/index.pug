@@ -204,10 +204,14 @@ block endOfBody
 			var valuePreview = op.valuePreview
 				? '<code class="small">' + escapeHtml(op.valuePreview) + '</code>'
 				: '';
+			var heightCell = (typeof op.height === "number")
+				? '<a class="font-monospace small" href="./block-height/' + op.height + '">' + op.height.toLocaleString() + '</a>'
+				: '';
 			return '<tr>'
 				+ '<td><span class="badge ' + badgeColor + '">' + op.op + '</span>' + pendingMark + '</td>'
 				+ '<td>' + nameCell + '</td>'
 				+ '<td class="text-truncate" style="max-width:24rem">' + valuePreview + '</td>'
+				+ '<td>' + heightCell + '</td>'
 				+ '<td><a class="font-monospace small" href="./tx/' + op.txid + '">' + op.txid.slice(0, 12) + '…</a></td>'
 				+ '</tr>';
 		}
@@ -250,7 +254,7 @@ block endOfBody
 				opsFrag = opsTotal.toLocaleString() + ' confirmed in last ' + payload.window + ' blocks';
 			}
 			var caption = '<div class="text-muted small mb-2">' + pendingFrag + ', ' + opsFrag + '.</div>';
-			el.innerHTML = caption + '<div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Op</th><th>Name</th><th>Value</th><th>Tx</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+			el.innerHTML = caption + '<div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Op</th><th>Name</th><th>Value</th><th>Height</th><th>Tx</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
 		}
 
 		$(document).ready(function() {

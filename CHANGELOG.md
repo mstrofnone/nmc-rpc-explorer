@@ -1,3 +1,19 @@
+##### nmc-3.6.42
+###### 2026-09-05
+
+**Add a Height column to the homepage "Recent Name Operations" tile.**
+
+Confirmed name operations now link to their block height via
+`/block-height/<h>`. Pending (mempool) operations leave the Height cell
+blank, matching the existing "pending" badge semantics.
+
+Implementation: `refreshRecentNameOps` now tracks the block height for
+each txid as it walks the last-N-blocks window and stamps it onto each
+op in the JSON payload. The client-side renderer reads `op.height` and
+renders a link when present, empty cell when null.
+
+---
+
 ##### nmc-3.6.41
 ###### 2026-08-22
 
