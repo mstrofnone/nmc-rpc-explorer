@@ -1,3 +1,20 @@
+##### nmc-3.6.43
+###### 2026-09-08
+
+**Show only unexpired names in the "Biggest current squatter" Sample
+names column.**
+
+Sample names for each cluster were collected in `name_scan` walk order
+(lexicographic) regardless of expiry status, so the *current* squatter
+leaderboard, which ranks clusters of *currently active* names, could
+list expired names as samples. Each cluster now tracks a separate
+active-only sample list and the current leaderboard renders that one.
+The all-time leaderboard is unchanged (active+expired samples are
+meaningful there). The section tooltip now states the active-only
+sample rule.
+
+---
+
 ##### nmc-3.6.42
 ###### 2026-09-05
 

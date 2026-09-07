@@ -842,7 +842,12 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 	// squatter". We accumulate per-value buckets here and rank them after
 	// the scan finishes.
 	//
-	// Memory shape: a Map<valueKey, {count,activeCount,expiredCount,sampleNames:[],byNamespace:{ns:count}}>.
+	// Memory shape: a Map<valueKey, {count,activeCount,expiredCount,sampleNames:[],sampleNamesActive:[],byNamespace:{ns:count}}>.
+	// `sampleNames` holds the first few names seen in scan order (active or
+	// expired) and backs the all-time leaderboard; `sampleNamesActive` holds
+	// only unexpired names and backs the "biggest current squatter" board,
+	// where showing an expired sample would contradict the "currently active"
+	// premise of the section.
 	// Cluster keys are the raw value string truncated to squatterMaxValueLen
 	// to bound memory; values longer than that are extremely rare on a 520-byte
 	// chain anyway. Empty values ("") are skipped — newly-registered
@@ -956,7 +961,7 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 						: row.value;
 					let bucket = clusters.get(clusterKey);
 					if (!bucket) {
-						bucket = { count: 0, activeCount: 0, expiredCount: 0, sampleNames: [], byNamespace: {} };
+						bucket = { count: 0, activeCount: 0, expiredCount: 0, sampleNames: [], sampleNamesActive: [], byNamespace: {} };
 						clusters.set(clusterKey, bucket);
 					}
 					bucket.count++;
@@ -964,6 +969,9 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 					else bucket.activeCount++;
 					if (bucket.sampleNames.length < squatterSampleNames) {
 						bucket.sampleNames.push(row.name);
+					}
+					if (!row.expired && bucket.sampleNamesActive.length < squatterSampleNames) {
+						bucket.sampleNamesActive.push(row.name);
 					}
 					bucket.byNamespace[ns] = (bucket.byNamespace[ns] || 0) + 1;
 				}
@@ -1076,15 +1084,20 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 			activeCount: bucket.activeCount,
 			expiredCount: bucket.expiredCount,
 			sampleNames: bucket.sampleNames,
+			sampleNamesActive: bucket.sampleNamesActive,
 			byNamespace: bucket.byNamespace,
 		});
 	}
-	// Current squatters: rank by active count desc, then total desc.
+	// Current squatters: rank by active count desc, then total desc. Sample
+	// names come from the active-only list: scan order is lexicographic, not
+	// active-first, so the generic `sampleNames` list can be front-loaded with
+	// expired names that would misrepresent a "currently active" leaderboard.
 	summary.squattersCurrent = clusterArr
 		.filter(c => c.activeCount >= squatterMinCount)
 		.slice() // shallow copy before sort
 		.sort((a, b) => (b.activeCount - a.activeCount) || (b.count - a.count))
-		.slice(0, squatterTopN);
+		.slice(0, squatterTopN)
+		.map(c => ({ ...c, sampleNames: c.sampleNamesActive }));
 	// All-time squatters: rank by total count desc, then active desc.
 	summary.squattersAllTime = clusterArr
 		.slice()
