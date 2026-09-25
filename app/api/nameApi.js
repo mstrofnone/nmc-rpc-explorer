@@ -617,6 +617,11 @@ function parseNameIdFields(parsedValue) {
 // ---------------------------------------------------------------------------
 
 const ONION_RE = /\b[a-z2-7]{16,56}\.onion\b/i;
+// Version-split onion matchers: v2 hosts are exactly 16 base32 chars, v3
+// exactly 56. The \b anchor means a 56-char host cannot match ONION_V2_RE
+// (no word boundary in the middle of a host) and vice versa.
+const ONION_V2_RE = /\b[a-z2-7]{16}\.onion\b/i;
+const ONION_V3_RE = /\b[a-z2-7]{56}\.onion\b/i;
 // I2P: match valid b32.i2p addresses only (52-60 base32 chars + .b32.i2p)
 // Do NOT match bare ".i2p" mentions in text (e.g. "mail.i2p" in contact info)
 const I2P_RE = /\b[a-z2-7]{52,60}\.b32\.i2p\b/i;
@@ -648,9 +653,32 @@ function _collectStrings(value, out, depth) {
 function _hasKeyDeep(obj, keyTest, depth = 0) {
 	if (depth > 12 || obj == null || typeof obj !== "object") return false;
 	for (const k of Object.keys(obj)) {
-		if (keyTest(k)) return true;
+		// ifa-0001 null suppression: a key explicitly set to null means
+		// "no such field", so it does not count as carrying the shape.
+		if (obj[k] != null && keyTest(k)) return true;
 		const v = obj[k];
 		if (v && typeof v === "object" && _hasKeyDeep(v, keyTest, depth + 1)) return true;
+	}
+	return false;
+}
+
+// Mail-implying SRV service names. When a `service` / `srv` value is an
+// object, its child keys name the services offered (e.g. "_imap._tcp");
+// advertising a mail protocol implies the name handles mail, so these tag
+// MX as well as SRV. _sieve / _managesieve are deliberately excluded:
+// mail-adjacent, but not MX.
+const MAIL_SRV_RE = /^_(smtp|submission|submissions|imap|imaps|pop3|pop3s)\./;
+
+function _hasMailSrv(obj, depth = 0) {
+	if (depth > 12 || obj == null || typeof obj !== "object") return false;
+	for (const k of Object.keys(obj)) {
+		const v = obj[k];
+		if ((k === "service" || k === "srv") && v && typeof v === "object" && !Array.isArray(v)) {
+			for (const svcName of Object.keys(v)) {
+				if (MAIL_SRV_RE.test(svcName.toLowerCase())) return true;
+			}
+		}
+		if (v && typeof v === "object" && _hasMailSrv(v, depth + 1)) return true;
 	}
 	return false;
 }
@@ -677,11 +705,22 @@ function classifyNameValue(parsed, rawValue) {
 		(hasJson && _hasKeyDeep(parsed, (k) => k === "tor" || k === "_tor"))) {
 		tags.add("onion");
 	}
+	// Version split: an exactly-16 host tags onion-v2, an exactly-56 host
+	// tags onion-v3. The tor/_tor key check above stays version-agnostic.
+	if (ONION_V2_RE.test(haystack)) {
+		tags.add("onion");
+		tags.add("onion-v2");
+	}
+	if (ONION_V3_RE.test(haystack)) {
+		tags.add("onion");
+		tags.add("onion-v3");
+	}
 
 	// TLS — ifa-0001 §"tls": typically a `tls` field whose value is an array
 	// of TLSA tuples `[[usage, selector, mtype, hash], ...]`. We also accept
 	// any deeply-nested `tls` key.
-	if (hasJson && _hasKeyDeep(parsed, (k) => k === "tls" || k === "tlsa")) {
+	// The deprecated ifa-0001 `fingerprint` field (pre-`tls`) also tags tls.
+	if (hasJson && _hasKeyDeep(parsed, (k) => k === "tls" || k === "tlsa" || k === "fingerprint")) {
 		tags.add("tls");
 	}
 
@@ -726,9 +765,10 @@ function classifyNameValue(parsed, rawValue) {
 	//   - ip6      → AAAA   (IPv6 address)
 	//   - alias / translate → CNAME  (canonical name aliasing)
 	//   - ns       → NS     (nameserver delegation)
-	//   - email / mx → MX   (mail exchange)
+	//   - email    → EMAIL (contact address; not a DNS record)
+	//   - mx       → MX    (mail exchange; also implied by mail SRV service names)
 	//   - txt      → TXT    (arbitrary text records)
-	//   - service  → SRV    (service location)
+	//   - service / srv → SRV (service location)
 	//   - tls / tlsa → TLSA (DANE TLS pinning)
 	//   - ds       → DS     (DNSSEC delegation signer)
 	//   - dnssec   → DNSSEC (cryptographic validation marker)
@@ -749,8 +789,14 @@ function classifyNameValue(parsed, rawValue) {
 		if (_hasKeyDeep(parsed, (k) => k === "ns")) {
 			tags.add("ns");
 		}
-		// MX — Mail exchange servers (`email` shorthand or `mx` array per ifa-0001)
-		if (_hasKeyDeep(parsed, (k) => k === "email" || k === "mx")) {
+		// Email: contact address field (`email` per ifa-0001). A contact
+		// address, not a mail-exchange record; it no longer counts as MX.
+		if (_hasKeyDeep(parsed, (k) => k === "email")) {
+			tags.add("email");
+		}
+		// MX: mail exchange servers (`mx` array per ifa-0001), or mail
+		// protocols advertised via SRV service names (see _hasMailSrv).
+		if (_hasKeyDeep(parsed, (k) => k === "mx") || _hasMailSrv(parsed)) {
 			tags.add("mx");
 		}
 		// TXT — Text records (arbitrary data; `txt` per ifa-0001)
@@ -781,7 +827,7 @@ function classifyNameValue(parsed, rawValue) {
 	return tags;
 }
 
-const FILTER_KEYS = ["json", "onion", "tls", "ip", "nostr", "i2p", "zeronet", "a", "aaaa", "cname", "ns", "mx", "txt", "srv", "soa", "ds", "dnssec"];
+const FILTER_KEYS = ["json", "onion", "tls", "ip", "nostr", "i2p", "zeronet", "a", "aaaa", "cname", "ns", "mx", "txt", "srv", "soa", "ds", "dnssec", "onion-v2", "onion-v3", "email"];
 const FILTER_LABELS = {
 	json: "Valid JSON",
 	onion: ".onion",
@@ -800,11 +846,16 @@ const FILTER_LABELS = {
 	soa: "SOA",
 	ds: "DS",
 	dnssec: "DNSSEC",
+	"onion-v2": "Onion v2",
+	"onion-v3": "Onion v3",
+	email: "Email",
 };
 const FILTER_DESCRIPTIONS = {
 	json: "Names whose value parses as JSON. The Namecoin convention is to use JSON for any structured record (d/, id/, dd/, nft/, ...); a name without JSON is usually a one-line text payload.",
-	onion: "Names whose value carries a Tor v2/v3 onion address — either as a `tor` / `_tor` field (NameID convention) or as any v3 .onion hostname embedded anywhere in the value.",
-	tls: "Names that publish TLSA records (ifa-0001 §tls). The `tls` field is an array of `[usage, selector, mtype, hash]` tuples used to pin a host's TLS certificate via Namecoin instead of a public CA. Used by .bit relays for DANE TLS pinning.",
+	onion: "Names whose value carries a Tor onion address of any version: either a `tor` / `_tor` field (NameID convention) or a `.onion` hostname embedded anywhere in the value. See the Onion v2 and Onion v3 filters for the per-version split.",
+	"onion-v2": "Names whose value carries a Tor v2 onion address: a 16-character base32 host ending in `.onion`.",
+	"onion-v3": "Names whose value carries a Tor v3 onion address: a 56-character base32 host ending in `.onion`.",
+	tls: "Names that publish TLSA records (ifa-0001 `tls` / `tlsa` field, or the deprecated `fingerprint` field). The `tls` field is an array of `[usage, selector, mtype, hash]` tuples used to pin a host's TLS certificate via Namecoin instead of a public CA. Used by .bit relays for DANE TLS pinning.",
 	ip: "Names that publish at least one IP address (`ip` / `ip4` / `ip6` field per ifa-0001, or a literal address anywhere in the value). Combines A and AAAA for backwards compat.",
 	nostr: "Names that publish a Nostr identity — either a single `nostr.pubkey` (NameID-style) or a multi-identity `nostr.names` map for NIP-05 delegation across subdomains.",
 	i2p: "Names that publish an I2P address — either an `i2p` field in the JSON value or a valid `.b32.i2p` host (52-60 base32 characters). Does not match names that merely mention '.i2p' in text.",
@@ -813,9 +864,10 @@ const FILTER_DESCRIPTIONS = {
 	aaaa: "AAAA — IPv6 address mapping (ifa-0001 `ip6` field). Maps a name to one or more IPv6 addresses.",
 	cname: "CNAME — Canonical name alias (ifa-0001 `alias` / `translate`). Redirects this name's resolution to another name.",
 	ns: "NS — Nameserver delegation (ifa-0001 `ns` field). Delegates resolution authority to one or more DNS nameservers.",
-	mx: "MX — Mail exchange servers (ifa-0001 `email` / `mx`). Specifies which mail servers handle email for this name.",
+	mx: "MX: Mail exchange servers. An `mx` field per ifa-0001, or SRV service names for mail protocols (`_smtp`, `_submission`, `_imap`, `_pop3` and TLS variants). The `email` contact field is separate and does not count toward MX.",
+	email: "Names whose value carries an `email` field (ifa-0001 contact address). A contact address is not a mail-exchange record, so it is tracked separately from MX.",
 	txt: "TXT — Text records (ifa-0001 `txt` field). Arbitrary text data; commonly used for SPF, DKIM, domain verification, and ad-hoc metadata.",
-	srv: "SRV — Service location records (ifa-0001 `service` field). Locates a host:port for a named service (e.g. `_xmpp._tcp`).",
+	srv: "SRV: Service location records (ifa-0001 `service` field, or the equivalent `srv` field). Locates a host:port for a named service (e.g. `_xmpp._tcp`).",
 	soa: "SOA — Start of authority record. Indicates the primary nameserver and admin contact for a DNS zone served via Namecoin.",
 	ds: "DS — Delegation signer (DNSSEC). The `ds` field carries the cryptographic hash of a child zone's DNSKEY, anchoring DNSSEC validation in the Namecoin record.",
 	dnssec: "DNSSEC-related records (cryptographic validation). Names carrying any DNSSEC-validation field: `dnssec`, `ds`, `rrsig`, `dnskey`, `nsec`, or `nsec3`.",
@@ -2080,6 +2132,8 @@ module.exports = {
 	nip05ForLocalPart,
 	getNamesSummary,
 	classifyNameValue,
+	ONION_V2_RE,
+	ONION_V3_RE,
 	FILTER_KEYS,
 	FILTER_LABELS,
 	FILTER_DESCRIPTIONS,
