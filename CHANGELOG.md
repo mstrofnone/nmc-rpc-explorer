@@ -1,3 +1,19 @@
+##### nmc-3.6.52
+###### 2026-09-26
+
+**Split the Bitmessage value-shape filter by namespace and add a CBOR
+filter.** The Bitmessage tile now has d/, dd/, id/, and other
+sub-filters, matching the Bitcoin and Namecoin splits; an importer of a
+name carrying a Bitmessage address counts under the importer's
+namespace. The new CBOR filter flags names whose value is CBOR-encoded
+binary rather than JSON, detected via the first byte of the value in
+hex form: CBOR maps open with a header byte in the A0-BF range (major
+type 5). ASCII-encoded values cannot carry that byte, so only
+hex-encoded values are checked. The Value-shape filters tooltip no
+longer mentions the removed 5,000-entry list cap.
+
+---
+
 ##### nmc-3.6.51
 ###### 2026-09-25
 
