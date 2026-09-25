@@ -788,16 +788,24 @@ function classifyNameValue(parsed, rawValue, valueEncoding) {
 	const hasJson = parsed != null && typeof parsed === "object";
 	if (hasJson) tags.add("json");
 
-	// CBOR-encoded value. CBOR maps ("objects") open with a header byte in
-	// 0xA0-0xBF (major type 5). That byte is non-printable, so a CBOR value
-	// comes back from name_scan hex-encoded: check the first byte of the
-	// hex form. ASCII-encoded values can never carry the 0xA0-0xBF header
-	// (printable bytes are all < 0x80), so the ASCII form is not checked.
-	// Other CBOR major types (arrays, strings, numbers) are not matched;
-	// only maps are, the canonical container for a structured record.
+	// CBOR-encoded value. The check looks at the first byte of the value
+	// in hex form: every CBOR data item opens with a header byte whose
+	// high 3 bits are the major type (0-7: unsigned/negative integer,
+	// byte or text string, array, map, tag, simple/float), and all major
+	// types are matched. CBOR payloads carry non-printable bytes, so they
+	// come back from name_scan hex-encoded; ASCII-encoded values are not
+	// checked (a CBOR value made only of printable characters, e.g. a
+	// short text string, is indistinguishable from plain text). Bytes
+	// that cannot start a well-formed item are not matched: a reserved
+	// additional-info value (28-30 in every major type, 31 for integers,
+	// tags, and simple values) or the break code 0xFF.
 	if (valueEncoding === "hex" && typeof rawValue === "string" && /^[0-9a-fA-F]{2}/.test(rawValue)) {
 		const firstByte = parseInt(rawValue.substring(0, 2), 16);
-		if (firstByte >= 0xA0 && firstByte <= 0xBF) tags.add("cbor");
+		const majorType = firstByte >> 5;
+		const addlInfo = firstByte & 0x1F;
+		const reserved = (addlInfo >= 28 && addlInfo <= 30)
+			|| (addlInfo === 31 && (majorType <= 1 || majorType >= 6));
+		if (!reserved) tags.add("cbor");
 	}
 
 	// Build a single big haystack of every string we can find. Cheaper than
@@ -1042,7 +1050,7 @@ const FILTER_LABELS = {
 };
 const FILTER_DESCRIPTIONS = {
 	json: "Names whose value parses as JSON. The Namecoin convention is to use JSON for any structured record (d/, id/, dd/, nft/, ...); a name without JSON is usually a one-line text payload.",
-	cbor: "Names whose value is CBOR-encoded binary rather than JSON. Detected via the first byte of the value in hex form: CBOR maps ('objects') open with a header byte in the A0-BF range (major type 5). That byte is non-printable, so CBOR values come back from name_scan hex-encoded, which is what makes the byte check possible; ASCII-encoded values cannot carry the A0-BF header byte. Other CBOR major types (arrays, strings, numbers) are not matched; only maps are, the canonical container for a structured record.",
+	cbor: "Names whose value is CBOR-encoded binary rather than JSON. Detected via the first byte of the value in hex form: a CBOR data item opens with a header byte whose high 3 bits are the major type (unsigned/negative integer, byte or text string, array, map, tag, simple/float), and every major type is matched. CBOR payloads carry non-printable bytes, so they come back from name_scan hex-encoded; ASCII-encoded values are not checked (a CBOR value made only of printable characters is indistinguishable from plain text). Bytes that cannot start a well-formed item are excluded: reserved additional-info values (28-30 in every major type, 31 for integers, tags, and simple values) and the break code 0xFF.",
 	onion: "Names whose value carries a Tor onion address of any version: either a `tor` / `_tor` field (NameID convention) or a `.onion` hostname embedded anywhere in the value. See the Onion v2 and Onion v3 filters for the per-version split.",
 	"onion-v2": "Names whose value carries a Tor v2 onion address: a 16-character base32 host ending in `.onion`.",
 	"onion-v3": "Names whose value carries a Tor v3 onion address: a 56-character base32 host ending in `.onion`.",
