@@ -641,6 +641,18 @@ const XMR_RE_SUBADDRESS = /\b8[0-9AB][1-9A-HJ-NP-Za-km-z]{93}\b/;
 const NMC_RE_LEGACY = /\b[MN][a-km-zA-HJ-NP-Z1-9]{26,34}\b/;
 const NMC_RE_BECH32 = /\bnc1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{11,71}\b/i;
 
+// Bitmessage address in value: "BM-" + base58 payload (v2 payloads are 32
+// chars, v3/v4 up to 36). Regex only, no checksum validation. Old v2
+// payloads can start with M/N or 1/3, so they false-positive as Namecoin or
+// Bitcoin addresses; they are scrubbed from the address haystack below.
+const BITMESSAGE_RE = /\bBM-[1-9A-HJ-NP-Za-km-z]{32,36}\b/;
+const BITMESSAGE_RE_G = /\bBM-[1-9A-HJ-NP-Za-km-z]{32,36}\b/g;
+
+// cjdns IPv6 address in value (fc00::/8): full 8-hextet form, or a
+// "::"-compressed form. Regex only, no validation beyond shape + fc prefix.
+const CJDNS_RE = /\bfc[0-9a-f]{2}(?::[0-9a-f]{1,4}){7}\b/i;
+const CJDNS_RE_COMPRESSED = /\bfc[0-9a-f]{2}(?::[0-9a-f]{0,4}){0,6}::(?:[0-9a-f]{1,4}:?){1,6}\b/i;
+
 // Collect every leaf string in a parsed JSON tree (depth-bounded). Used by the
 // filter detectors so we can scan all string values without writing custom
 // recursion in each one.
@@ -673,6 +685,34 @@ function _hasKeyDeep(obj, keyTest, depth = 0) {
 		if (v && typeof v === "object" && _hasKeyDeep(v, keyTest, depth + 1)) return true;
 	}
 	return false;
+}
+
+// True when a `fingerprint` key sits where an IP address would: the root
+// of the value, or inside a subdomain record reached through `map` keys at
+// any nesting depth (ifa-0001 nested subdomains recurse map -> subdomain ->
+// map -> ...). A `fingerprint` nested in an unrelated object (e.g. a PGP
+// block) does not count for TLSA.
+function _hasTlsaFingerprintAtIpLevel(node, depth = 0) {
+	if (depth > 12 || node == null || typeof node !== "object" || Array.isArray(node)) return false;
+	if (node.fingerprint != null) return true;
+	const map = node.map;
+	if (map && typeof map === "object" && !Array.isArray(map)) {
+		for (const sub of Object.keys(map)) {
+			if (_hasTlsaFingerprintAtIpLevel(map[sub], depth + 1)) return true;
+		}
+	}
+	return false;
+}
+
+// Namespace bucket for the per-namespace coin-address filter splits.
+// Based on the listed name's own prefix; anything outside d/, dd/, and
+// id/ lands in "other".
+function _filterNamespace(name) {
+	const n = String(name || "").toLowerCase();
+	if (n.startsWith("d/")) return "d";
+	if (n.startsWith("dd/")) return "dd";
+	if (n.startsWith("id/")) return "id";
+	return "other";
 }
 
 // Collect every leaf string value whose key matches keyTest, walking the
@@ -758,8 +798,12 @@ function classifyNameValue(parsed, rawValue) {
 	// TLS — ifa-0001 §"tls": typically a `tls` field whose value is an array
 	// of TLSA tuples `[[usage, selector, mtype, hash], ...]`. We also accept
 	// any deeply-nested `tls` key.
-	// The deprecated ifa-0001 `fingerprint` field (pre-`tls`) also tags tls.
-	if (hasJson && _hasKeyDeep(parsed, (k) => k === "tls" || k === "tlsa" || k === "fingerprint")) {
+	// The deprecated ifa-0001 `fingerprint` field (pre-`tls`) also tags tls,
+	// but only where an IP address would sit: the value root or a subdomain
+	// record under `map` (any nesting depth). A `fingerprint` nested inside
+	// an unrelated object (e.g. `pgp`) is not a TLSA record.
+	if ((hasJson && _hasKeyDeep(parsed, (k) => k === "tls" || k === "tlsa")) ||
+		(hasJson && _hasTlsaFingerprintAtIpLevel(parsed))) {
 		tags.add("tls");
 	}
 
@@ -802,12 +846,23 @@ function classifyNameValue(parsed, rawValue) {
 		tags.add("freenet");
 	}
 
+	// Bitmessage address in value: "BM-" + base58 payload, or a
+	// `bitmessage` JSON field. Detected before the coin-address regexes and
+	// scrubbed from the address haystack: old (v2) Bitmessage payloads are
+	// base58 and can start with M/N or 1/3, so they would false-positive as
+	// Namecoin or Bitcoin addresses.
+	const addrHaystack = haystack.replace(BITMESSAGE_RE_G, " ");
+	if ((hasJson && _hasKeyDeep(parsed, (k) => k.toLowerCase() === "bitmessage")) ||
+		BITMESSAGE_RE.test(haystack)) {
+		tags.add("bitmessage");
+	}
+
 	// Bitcoin address in value: legacy base58check or bech32/bech32m.
 	// Scrub zeronet-keyed strings from the haystack first so ZeroNet
 	// addresses do not false-positive as Bitcoin addresses. A bare
 	// zeronet-looking address in plain text still matches btc; that is
 	// unavoidable without key context.
-	let btcHaystack = haystack;
+	let btcHaystack = addrHaystack;
 	if (hasJson) {
 		const zeronetVals = [];
 		_collectKeyValuesDeep(parsed, (k) => k.toLowerCase() === "zeronet", zeronetVals);
@@ -825,8 +880,17 @@ function classifyNameValue(parsed, rawValue) {
 	}
 
 	// Namecoin address in value: legacy P2PKH (M/N prefix) or bech32 (nc1).
-	if (NMC_RE_LEGACY.test(haystack) || NMC_RE_BECH32.test(haystack)) {
+	// Runs on the bitmessage-scrubbed haystack so old BM- payloads with an
+	// M/N-leading base58 part do not false-positive here.
+	if (NMC_RE_LEGACY.test(addrHaystack) || NMC_RE_BECH32.test(addrHaystack)) {
 		tags.add("nmc");
+	}
+
+	// cjdns IPv6 address in value (fc00::/8). These also match the generic
+	// ip / aaaa filters; cjdns is tracked separately because the range is
+	// reserved for private use and its presence signals a cjdns service.
+	if (CJDNS_RE.test(haystack) || CJDNS_RE_COMPRESSED.test(haystack)) {
+		tags.add("cjdns");
 	}
 
 	// DNS record types. These are ifa-0001 §"map" sub-fields that carry
@@ -900,7 +964,7 @@ function classifyNameValue(parsed, rawValue) {
 	return tags;
 }
 
-const FILTER_KEYS = ["json", "onion", "tls", "ip", "nostr", "i2p", "zeronet", "a", "aaaa", "cname", "ns", "mx", "txt", "srv", "soa", "ds", "dnssec", "onion-v2", "onion-v3", "email", "freenet", "btc", "xmr", "nmc"];
+const FILTER_KEYS = ["json", "onion", "tls", "ip", "nostr", "i2p", "zeronet", "a", "aaaa", "cname", "ns", "mx", "txt", "srv", "soa", "ds", "dnssec", "onion-v2", "onion-v3", "email", "freenet", "btc", "btc-d", "btc-dd", "btc-id", "btc-other", "xmr", "nmc", "nmc-d", "nmc-dd", "nmc-id", "nmc-other", "bitmessage", "cjdns"];
 const FILTER_LABELS = {
 	json: "Valid JSON",
 	onion: ".onion",
@@ -924,15 +988,25 @@ const FILTER_LABELS = {
 	email: "Email",
 	freenet: "Freenet",
 	btc: "Bitcoin",
+	"btc-d": "Bitcoin (d/)",
+	"btc-dd": "Bitcoin (dd/)",
+	"btc-id": "Bitcoin (id/)",
+	"btc-other": "Bitcoin (other)",
 	xmr: "Monero",
 	nmc: "Namecoin",
+	"nmc-d": "Namecoin (d/)",
+	"nmc-dd": "Namecoin (dd/)",
+	"nmc-id": "Namecoin (id/)",
+	"nmc-other": "Namecoin (other)",
+	bitmessage: "Bitmessage",
+	cjdns: "CJDNS",
 };
 const FILTER_DESCRIPTIONS = {
 	json: "Names whose value parses as JSON. The Namecoin convention is to use JSON for any structured record (d/, id/, dd/, nft/, ...); a name without JSON is usually a one-line text payload.",
 	onion: "Names whose value carries a Tor onion address of any version: either a `tor` / `_tor` field (NameID convention) or a `.onion` hostname embedded anywhere in the value. See the Onion v2 and Onion v3 filters for the per-version split.",
 	"onion-v2": "Names whose value carries a Tor v2 onion address: a 16-character base32 host ending in `.onion`.",
 	"onion-v3": "Names whose value carries a Tor v3 onion address: a 56-character base32 host ending in `.onion`.",
-	tls: "Names that publish TLSA records (ifa-0001 `tls` / `tlsa` field, or the deprecated `fingerprint` field). The `tls` field is an array of `[usage, selector, mtype, hash]` tuples used to pin a host's TLS certificate via Namecoin instead of a public CA. Used by .bit relays for DANE TLS pinning.",
+	tls: "Names that publish TLSA records (ifa-0001 `tls` / `tlsa` field, or the deprecated `fingerprint` field where an IP address would sit: the value root or a subdomain record under `map`, at any nesting depth; a `fingerprint` nested in other objects such as `pgp` does not count). The `tls` field is an array of `[usage, selector, mtype, hash]` tuples used to pin a host's TLS certificate via Namecoin instead of a public CA. Used by .bit relays for DANE TLS pinning.",
 	ip: "Names that publish at least one IP address (`ip` / `ip4` / `ip6` field per ifa-0001, or a literal address anywhere in the value). Combines A and AAAA for backwards compat.",
 	nostr: "Names that publish a Nostr identity — either a single `nostr.pubkey` (NameID-style) or a multi-identity `nostr.names` map for NIP-05 delegation across subdomains.",
 	i2p: "Names that publish an I2P address — either an `i2p` field in the JSON value or a valid `.b32.i2p` host (52-60 base32 characters). Does not match names that merely mention '.i2p' in text.",
@@ -946,7 +1020,17 @@ const FILTER_DESCRIPTIONS = {
 	freenet: "Names whose value carries a Freenet/Hyphanet key (`freenet` or `hyphanet` JSON field) or a Freenet URI (CHK/SSK/USK/KSK) embedded in the value.",
 	btc: "Names whose value carries a Bitcoin address (legacy base58check or bech32/bech32m). Regex detection does not validate checksums. ZeroNet site addresses are also base58, so addresses found as values of a `zeronet` JSON key are excluded from this filter; a bare zeronet-looking address in plain text with no JSON key context still matches.",
 	xmr: "Names whose value carries a Monero address (standard/integrated or subaddress). Regex detection does not validate checksums.",
-	nmc: "Names whose value carries a Namecoin address (legacy P2PKH M/N prefix, or bech32 nc1). Regex detection does not validate checksums.",
+	nmc: "Names whose value carries a Namecoin address (legacy P2PKH M/N prefix, or bech32 nc1). Bitmessage addresses (BM- + base58 payload) are excluded and classified under the bitmessage filter. Regex detection does not validate checksums.",
+	"btc-d": "d/ names whose value carries a Bitcoin address, directly or via ifa-0001 import. Namespace subset of the btc filter; the listed name's own namespace decides. Detection caveats as for btc.",
+	"btc-dd": "dd/ names whose value carries a Bitcoin address, directly or via ifa-0001 import. Namespace subset of the btc filter; the listed name's own namespace decides. Detection caveats as for btc.",
+	"btc-id": "id/ names whose value carries a Bitcoin address, directly or via ifa-0001 import. Namespace subset of the btc filter; the listed name's own namespace decides. Detection caveats as for btc.",
+	"btc-other": "Names outside the d/, dd/, and id/ namespaces whose value carries a Bitcoin address, directly or via ifa-0001 import. Namespace subset of the btc filter. Detection caveats as for btc.",
+	"nmc-d": "d/ names whose value carries a Namecoin address, directly or via ifa-0001 import. Namespace subset of the nmc filter; the listed name's own namespace decides. Detection caveats as for nmc.",
+	"nmc-dd": "dd/ names whose value carries a Namecoin address, directly or via ifa-0001 import. Namespace subset of the nmc filter; the listed name's own namespace decides. Detection caveats as for nmc.",
+	"nmc-id": "id/ names whose value carries a Namecoin address, directly or via ifa-0001 import. Namespace subset of the nmc filter; the listed name's own namespace decides. Detection caveats as for nmc.",
+	"nmc-other": "Names outside the d/, dd/, and id/ namespaces whose value carries a Namecoin address, directly or via ifa-0001 import. Namespace subset of the nmc filter. Detection caveats as for nmc.",
+	bitmessage: "Names whose value carries a Bitmessage address (`BM-` + base58 payload, or a `bitmessage` JSON field). Old v2 Bitmessage payloads are base58 and can start with M/N or 1/3, so they are scrubbed before the Namecoin/Bitcoin regexes and classified here instead.",
+	cjdns: "Names whose value carries a cjdns IPv6 address: any IPv6 address starting with `fc` (fc00::/8, reserved for private use and used by cjdns), in full or `::`-compressed form. Also counted under the generic IP filter. Regex detection does not validate the address.",
 	txt: "TXT — Text records (ifa-0001 `txt` field). Arbitrary text data; commonly used for SPF, DKIM, domain verification, and ad-hoc metadata.",
 	srv: "SRV: Service location records (ifa-0001 `service` field, or the equivalent `srv` field). Locates a host:port for a named service (e.g. `_xmpp._tcp`).",
 	soa: "SOA — Start of authority record. Indicates the primary nameserver and admin contact for a DNS zone served via Namecoin.",
@@ -980,7 +1064,7 @@ const FILTER_DESCRIPTIONS = {
 //     elapsedMs:  <int>,
 //   }
 // ---------------------------------------------------------------------------
-async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefixes = null, filterListCap = 5000, squatterTopN = 10, squatterSampleNames = 5, squatterMinCount = 2, squatterMaxValueLen = 4096, expiringSoonBlocks = 2016, recentlyExpiredBlocks = 2016, expiringListCap = 500 } = {}) {
+async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefixes = null, filterListCap = 10000, squatterTopN = 10, squatterSampleNames = 5, squatterMinCount = 2, squatterMaxValueLen = 4096, expiringSoonBlocks = 2016, recentlyExpiredBlocks = 2016, expiringListCap = 500 } = {}) {
 	const startedAt = Date.now();
 	// Squatter clustering: group names by their EXACT value string. Names
 	// registered in bulk by the same operator (typo-squat farms, parking
@@ -1259,7 +1343,20 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 		return arr;
 	}
 	for (const [name, rec] of filterNameIndex.entries()) {
-		const finalTags = rec.imports ? resolveFilterTags(name, 0) : [...rec.tags];
+		// Copy the resolved tags: resolveFilterTags returns the memoized
+		// array, and the namespace split below must never leak into it (an
+		// importer of this name would otherwise inherit its namespace tag).
+		const resolved = rec.imports ? resolveFilterTags(name, 0) : rec.tags;
+		const finalTags = resolved ? [...resolved] : [];
+		// Namespace split for the coin-address filters: btc / nmc also tag
+		// btc-<ns> / nmc-<ns> using the listed name's own namespace. An
+		// importer of a name carrying an address is counted under the
+		// importer's namespace, matching how the combined filters list it.
+		if (finalTags.includes("btc") || finalTags.includes("nmc")) {
+			const ns = _filterNamespace(name);
+			if (finalTags.includes("btc")) finalTags.push(`btc-${ns}`);
+			if (finalTags.includes("nmc")) finalTags.push(`nmc-${ns}`);
+		}
 		for (const tag of finalTags) {
 			summary.filterCounts[tag]++;
 			// Cap per-filter lists so a chain with millions of matches
@@ -2213,6 +2310,7 @@ module.exports = {
 	nip05ForLocalPart,
 	getNamesSummary,
 	classifyNameValue,
+	filterNamespace: _filterNamespace,
 	ONION_V2_RE,
 	ONION_V3_RE,
 	FILTER_KEYS,
