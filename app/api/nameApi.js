@@ -627,6 +627,19 @@ const ONION_V3_RE = /\b[a-z2-7]{56}\.onion\b/i;
 const I2P_RE = /\b[a-z2-7]{52,60}\.b32\.i2p\b/i;
 const IPV4_RE = /\b(?:25[0-5]|2[0-4]\d|[01]?\d{1,2})(?:\.(?:25[0-5]|2[0-4]\d|[01]?\d{1,2})){3}\b/;
 const IPV6_RE = /\b(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{0,4}\b/i;
+// Freenet/Hyphanet: match CHK/SSK/USK/KSK keys with optional freenet: prefix.
+const FREENET_RE = /\b(?:freenet:)?(?:CHK|SSK|USK|KSK)@[A-Za-z0-9~-]{20,}/i;
+// Bitcoin address in value. Regexes do not validate checksums.
+// Overlap note: ZeroNet site addresses are base58 and will also match BTC_RE_LEGACY.
+// The zeronet filter is JSON-key-only precisely to avoid this collision.
+const BTC_RE_LEGACY = /\b[13][a-km-zA-HJ-NP-Z1-9]{25,34}\b/;
+const BTC_RE_BECH32 = /\bbc1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{11,87}\b/i;
+// Monero address in value. Regexes do not validate checksums.
+const XMR_RE_STANDARD = /\b4[0-9AB][1-9A-HJ-NP-Za-km-z]{93}\b/;
+const XMR_RE_SUBADDRESS = /\b8[0-9AB][1-9A-HJ-NP-Za-km-z]{93}\b/;
+// Namecoin address in value. Regexes do not validate checksums.
+const NMC_RE_LEGACY = /\b[MN][a-km-zA-HJ-NP-Z1-9]{26,34}\b/;
+const NMC_RE_BECH32 = /\bnc1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{11,71}\b/i;
 
 // Collect every leaf string in a parsed JSON tree (depth-bounded). Used by the
 // filter detectors so we can scan all string values without writing custom
@@ -660,6 +673,32 @@ function _hasKeyDeep(obj, keyTest, depth = 0) {
 		if (v && typeof v === "object" && _hasKeyDeep(v, keyTest, depth + 1)) return true;
 	}
 	return false;
+}
+
+// Collect every leaf string value whose key matches keyTest, walking the
+// JSON tree depth-bounded. Used to scrub known-false-positive spans from
+// the haystack before regex detection (e.g. zeronet addresses that look
+// like Bitcoin addresses).
+function _collectKeyValuesDeep(obj, keyTest, out, depth = 0) {
+	if (depth > 12 || obj == null || typeof obj !== "object") return;
+	for (const k of Object.keys(obj)) {
+		const v = obj[k];
+		if (v != null && keyTest(k)) {
+			if (typeof v === "string") out.push(v);
+			else if (Array.isArray(v)) {
+				for (const item of v) {
+					if (typeof item === "string") out.push(item);
+				}
+			} else if (typeof v === "object") {
+				// Subdomain map: values under the map are addresses.
+				for (const subK of Object.keys(v)) {
+					const subV = v[subK];
+					if (typeof subV === "string") out.push(subV);
+				}
+			}
+		}
+		if (v && typeof v === "object") _collectKeyValuesDeep(v, keyTest, out, depth + 1);
+	}
 }
 
 // Mail-implying SRV service names. When a `service` / `srv` value is an
@@ -756,6 +795,40 @@ function classifyNameValue(parsed, rawValue) {
 		tags.add("zeronet");
 	}
 
+	// Freenet/Hyphanet: either a `freenet` or `hyphanet` JSON key, or a
+	// Freenet URI (CHK/SSK/USK/KSK) embedded in the raw value string.
+	if ((hasJson && _hasKeyDeep(parsed, (k) => k === "freenet" || k === "hyphanet")) ||
+		FREENET_RE.test(haystack)) {
+		tags.add("freenet");
+	}
+
+	// Bitcoin address in value: legacy base58check or bech32/bech32m.
+	// Scrub zeronet-keyed strings from the haystack first so ZeroNet
+	// addresses do not false-positive as Bitcoin addresses. A bare
+	// zeronet-looking address in plain text still matches btc; that is
+	// unavoidable without key context.
+	let btcHaystack = haystack;
+	if (hasJson) {
+		const zeronetVals = [];
+		_collectKeyValuesDeep(parsed, (k) => k.toLowerCase() === "zeronet", zeronetVals);
+		for (const zv of zeronetVals) {
+			btcHaystack = btcHaystack.split(zv).join("");
+		}
+	}
+	if (BTC_RE_LEGACY.test(btcHaystack) || BTC_RE_BECH32.test(btcHaystack)) {
+		tags.add("btc");
+	}
+
+	// Monero address in value: standard/integrated or subaddress.
+	if (XMR_RE_STANDARD.test(haystack) || XMR_RE_SUBADDRESS.test(haystack)) {
+		tags.add("xmr");
+	}
+
+	// Namecoin address in value: legacy P2PKH (M/N prefix) or bech32 (nc1).
+	if (NMC_RE_LEGACY.test(haystack) || NMC_RE_BECH32.test(haystack)) {
+		tags.add("nmc");
+	}
+
 	// DNS record types. These are ifa-0001 §"map" sub-fields that carry
 	// individual DNS record types. Each gets its own filter so users can
 	// inspect names by specific DNS capability.
@@ -827,7 +900,7 @@ function classifyNameValue(parsed, rawValue) {
 	return tags;
 }
 
-const FILTER_KEYS = ["json", "onion", "tls", "ip", "nostr", "i2p", "zeronet", "a", "aaaa", "cname", "ns", "mx", "txt", "srv", "soa", "ds", "dnssec", "onion-v2", "onion-v3", "email"];
+const FILTER_KEYS = ["json", "onion", "tls", "ip", "nostr", "i2p", "zeronet", "a", "aaaa", "cname", "ns", "mx", "txt", "srv", "soa", "ds", "dnssec", "onion-v2", "onion-v3", "email", "freenet", "btc", "xmr", "nmc"];
 const FILTER_LABELS = {
 	json: "Valid JSON",
 	onion: ".onion",
@@ -849,6 +922,10 @@ const FILTER_LABELS = {
 	"onion-v2": "Onion v2",
 	"onion-v3": "Onion v3",
 	email: "Email",
+	freenet: "Freenet",
+	btc: "Bitcoin",
+	xmr: "Monero",
+	nmc: "Namecoin",
 };
 const FILTER_DESCRIPTIONS = {
 	json: "Names whose value parses as JSON. The Namecoin convention is to use JSON for any structured record (d/, id/, dd/, nft/, ...); a name without JSON is usually a one-line text payload.",
@@ -866,6 +943,10 @@ const FILTER_DESCRIPTIONS = {
 	ns: "NS — Nameserver delegation (ifa-0001 `ns` field). Delegates resolution authority to one or more DNS nameservers.",
 	mx: "MX: Mail exchange servers. An `mx` field per ifa-0001, or SRV service names for mail protocols (`_smtp`, `_submission`, `_imap`, `_pop3` and TLS variants). The `email` contact field is separate and does not count toward MX.",
 	email: "Names whose value carries an `email` field (ifa-0001 contact address). A contact address is not a mail-exchange record, so it is tracked separately from MX.",
+	freenet: "Names whose value carries a Freenet/Hyphanet key (`freenet` or `hyphanet` JSON field) or a Freenet URI (CHK/SSK/USK/KSK) embedded in the value.",
+	btc: "Names whose value carries a Bitcoin address (legacy base58check or bech32/bech32m). Regex detection does not validate checksums. ZeroNet site addresses are also base58, so addresses found as values of a `zeronet` JSON key are excluded from this filter; a bare zeronet-looking address in plain text with no JSON key context still matches.",
+	xmr: "Names whose value carries a Monero address (standard/integrated or subaddress). Regex detection does not validate checksums.",
+	nmc: "Names whose value carries a Namecoin address (legacy P2PKH M/N prefix, or bech32 nc1). Regex detection does not validate checksums.",
 	txt: "TXT — Text records (ifa-0001 `txt` field). Arbitrary text data; commonly used for SPF, DKIM, domain verification, and ad-hoc metadata.",
 	srv: "SRV: Service location records (ifa-0001 `service` field, or the equivalent `srv` field). Locates a host:port for a named service (e.g. `_xmpp._tcp`).",
 	soa: "SOA — Start of authority record. Indicates the primary nameserver and admin contact for a DNS zone served via Namecoin.",

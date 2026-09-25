@@ -1,44 +1,20 @@
-##### nmc-3.6.46
+##### nmc-3.6.47
 ###### 2026-09-25
 
-**Refine the value-shape filters: onion versions, email vs MX, SRV-implied MX, fingerprint TLSA.**
+**Add Freenet/Hyphanet, Bitcoin, Monero, and Namecoin address value-shape filters.**
 
-Tor onion addresses now classify by version: 16-character hosts tag
-`onion-v2`, 56-character hosts tag `onion-v3`, and both keep the
-combined `onion` tag (v2 addresses have been unreachable on the
-production Tor network since 2021, so the v2 count is a curio
-metric). The ifa-0001 `email` contact field no longer counts as MX;
-it has its own `email` filter. MX still fires on the `mx` field and
-now also on SRV service names for mail protocols (`_smtp`,
-`_submission`, `_imap`, `_pop3` and TLS variants) under either the
-`service` or `srv` key, since those imply mail handling. TLSA
-detection now accepts the deprecated ifa-0001 `fingerprint` field as
-well as `tls` / `tlsa`. Explicit `null` values no longer count as
-carrying a key (ifa-0001 null suppression). All of these compose
-with import-aware tag propagation: an importer of a v2-onion name is
-itself tagged `onion-v2`.
-
----
-
-##### nmc-3.6.46
-###### 2026-09-25
-
-**Refine the value-shape filters: onion versions, email vs MX, SRV-implied MX, fingerprint TLSA.**
-
-Tor onion addresses now classify by version: 16-character hosts tag
-`onion-v2`, 56-character hosts tag `onion-v3`, and both keep the
-combined `onion` tag (v2 addresses have been unreachable on the
-production Tor network since 2021, so the v2 count is a curio
-metric). The ifa-0001 `email` contact field no longer counts as MX;
-it has its own `email` filter. MX still fires on the `mx` field and
-now also on SRV service names for mail protocols (`_smtp`,
-`_submission`, `_imap`, `_pop3` and TLS variants) under either the
-`service` or `srv` key, since those imply mail handling. TLSA
-detection now accepts the deprecated ifa-0001 `fingerprint` field as
-well as `tls` / `tlsa`. Explicit `null` values no longer count as
-carrying a key (ifa-0001 null suppression). All of these compose
-with import-aware tag propagation: an importer of a v2-onion name is
-itself tagged `onion-v2`.
+Four new filters on /utxo-set and under /names/filter/: `freenet`
+(a `freenet` or `hyphanet` JSON key, or a CHK/SSK/USK/KSK URI embedded
+in the value), `btc` (legacy base58check or bech32/bech32m address),
+`xmr` (standard/integrated or subaddress), and `nmc` (legacy M/N
+P2PKH or bech32 nc1). Detection is regex-based and does not validate
+checksums. Because ZeroNet site addresses are base58 and
+indistinguishable from legacy Bitcoin addresses, addresses found as
+values of a `zeronet` JSON key are stripped from the haystack before
+the Bitcoin regex runs, so ZeroNet names do not false-positive as
+`btc`; a bare zeronet-looking address in plain text with no JSON key
+context still matches `btc` (documented on the tile tooltip and the
+filter page).
 
 ---
 
