@@ -1064,7 +1064,7 @@ const FILTER_DESCRIPTIONS = {
 //     elapsedMs:  <int>,
 //   }
 // ---------------------------------------------------------------------------
-async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefixes = null, filterListCap = 10000, squatterTopN = 10, squatterSampleNames = 5, squatterMinCount = 2, squatterMaxValueLen = 4096, expiringSoonBlocks = 2016, recentlyExpiredBlocks = 2016, expiringListCap = 500 } = {}) {
+async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefixes = null, filterListCap = Infinity, squatterTopN = 10, squatterSampleNames = 5, squatterMinCount = 2, squatterMaxValueLen = 4096, expiringSoonBlocks = 2016, recentlyExpiredBlocks = 2016, expiringListCap = 500 } = {}) {
 	const startedAt = Date.now();
 	// Squatter clustering: group names by their EXACT value string. Names
 	// registered in bulk by the same operator (typo-squat farms, parking
@@ -1359,9 +1359,11 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 		}
 		for (const tag of finalTags) {
 			summary.filterCounts[tag]++;
-			// Cap per-filter lists so a chain with millions of matches
-			// can't blow up memory; the click-through page should treat
-			// the cap as a hint to query the live `/api/names` directly.
+			// Filter lists are uncapped: every list is bounded by the
+			// active-name count and stores references to name strings that
+			// already live in filterNameIndex, so the extra memory is just
+			// array slots (a few MB worst case) and filter pages can always
+			// render the complete match list.
 			if (summary.filterLists[tag].length < filterListCap) {
 				summary.filterLists[tag].push(name);
 			}
