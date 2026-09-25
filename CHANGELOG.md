@@ -1,3 +1,20 @@
+##### nmc-3.6.44
+###### 2026-09-25
+
+**Add a ZeroNet value-shape filter.**
+
+Names whose JSON value carries a `zeronet` key (the convention
+ZeroNet's Namecoin integration uses for .bit sites: either a single
+site address string, or a subdomain map where the empty key is the
+root site) are now tagged during the background `name_scan` walk.
+The filter surfaces as a tile on /utxo-set with a click-through
+listing at /names/filter/zeronet. Detection is JSON-key-only by
+design: ZeroNet site addresses are plain base58check strings,
+indistinguishable from Bitcoin addresses, so text merely mentioning
+"zeronet" does not match.
+
+---
+
 ##### nmc-3.6.43
 ###### 2026-09-08
 
