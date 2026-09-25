@@ -687,14 +687,30 @@ function _hasKeyDeep(obj, keyTest, depth = 0) {
 	return false;
 }
 
+// True when a string looks like a TLSA/certificate fingerprint: hex,
+// optionally separated by colons or spaces, 40-128 hex chars once
+// separators are stripped (SHA-1 through SHA-512 territory). Anything
+// else (prose, a Bitmessage address, an URL) is not a TLSA record.
+function _looksLikeTlsaFingerprint(v) {
+	if (typeof v === "string") {
+		return /^[0-9a-f]{40,128}$/i.test(v.replace(/[: ]/g, ""));
+	}
+	if (Array.isArray(v)) {
+		return v.some((item) => _looksLikeTlsaFingerprint(item));
+	}
+	return false;
+}
+
 // True when a `fingerprint` key sits where an IP address would: the root
 // of the value, or inside a subdomain record reached through `map` keys at
 // any nesting depth (ifa-0001 nested subdomains recurse map -> subdomain ->
-// map -> ...). A `fingerprint` nested in an unrelated object (e.g. a PGP
-// block) does not count for TLSA.
+// map -> ...). The fingerprint value itself must look like a hex TLSA
+// fingerprint, so prose or contact addresses parked in a `fingerprint`
+// field do not tag tls. A `fingerprint` nested in an unrelated object
+// (e.g. a PGP block) does not count for TLSA.
 function _hasTlsaFingerprintAtIpLevel(node, depth = 0) {
 	if (depth > 12 || node == null || typeof node !== "object" || Array.isArray(node)) return false;
-	if (node.fingerprint != null) return true;
+	if (node.fingerprint != null && _looksLikeTlsaFingerprint(node.fingerprint)) return true;
 	const map = node.map;
 	if (map && typeof map === "object" && !Array.isArray(map)) {
 		for (const sub of Object.keys(map)) {
@@ -800,8 +816,9 @@ function classifyNameValue(parsed, rawValue) {
 	// any deeply-nested `tls` key.
 	// The deprecated ifa-0001 `fingerprint` field (pre-`tls`) also tags tls,
 	// but only where an IP address would sit: the value root or a subdomain
-	// record under `map` (any nesting depth). A `fingerprint` nested inside
-	// an unrelated object (e.g. `pgp`) is not a TLSA record.
+	// record under `map` (any nesting depth), and only when the value looks
+	// like a hex fingerprint. A `fingerprint` nested inside an unrelated
+	// object (e.g. `pgp`) or holding prose is not a TLSA record.
 	if ((hasJson && _hasKeyDeep(parsed, (k) => k === "tls" || k === "tlsa")) ||
 		(hasJson && _hasTlsaFingerprintAtIpLevel(parsed))) {
 		tags.add("tls");
@@ -870,6 +887,10 @@ function classifyNameValue(parsed, rawValue) {
 			btcHaystack = btcHaystack.split(zv).join("");
 		}
 	}
+	// ZeroNet local-proxy URLs (127.0.0.1:43110/<site address>) embed a
+	// base58 site address that matches the BTC shape; strip the whole URL
+	// token so the site address does not false-positive as Bitcoin.
+	btcHaystack = btcHaystack.replace(/127\.0\.0\.1:43110\/[A-Za-z0-9]+/g, " ");
 	if (BTC_RE_LEGACY.test(btcHaystack) || BTC_RE_BECH32.test(btcHaystack)) {
 		tags.add("btc");
 	}
@@ -1006,7 +1027,7 @@ const FILTER_DESCRIPTIONS = {
 	onion: "Names whose value carries a Tor onion address of any version: either a `tor` / `_tor` field (NameID convention) or a `.onion` hostname embedded anywhere in the value. See the Onion v2 and Onion v3 filters for the per-version split.",
 	"onion-v2": "Names whose value carries a Tor v2 onion address: a 16-character base32 host ending in `.onion`.",
 	"onion-v3": "Names whose value carries a Tor v3 onion address: a 56-character base32 host ending in `.onion`.",
-	tls: "Names that publish TLSA records (ifa-0001 `tls` / `tlsa` field, or the deprecated `fingerprint` field where an IP address would sit: the value root or a subdomain record under `map`, at any nesting depth; a `fingerprint` nested in other objects such as `pgp` does not count). The `tls` field is an array of `[usage, selector, mtype, hash]` tuples used to pin a host's TLS certificate via Namecoin instead of a public CA. Used by .bit relays for DANE TLS pinning.",
+	tls: "Names that publish TLSA records (ifa-0001 `tls` / `tlsa` field, or the deprecated `fingerprint` field where an IP address would sit: the value root or a subdomain record under `map`, at any nesting depth, and only when the value looks like a hex fingerprint; a `fingerprint` nested in other objects such as `pgp`, or holding non-hex prose, does not count). The `tls` field is an array of `[usage, selector, mtype, hash]` tuples used to pin a host's TLS certificate via Namecoin instead of a public CA. Used by .bit relays for DANE TLS pinning.",
 	ip: "Names that publish at least one IP address (`ip` / `ip4` / `ip6` field per ifa-0001, or a literal address anywhere in the value). Combines A and AAAA for backwards compat.",
 	nostr: "Names that publish a Nostr identity — either a single `nostr.pubkey` (NameID-style) or a multi-identity `nostr.names` map for NIP-05 delegation across subdomains.",
 	i2p: "Names that publish an I2P address — either an `i2p` field in the JSON value or a valid `.b32.i2p` host (52-60 base32 characters). Does not match names that merely mention '.i2p' in text.",
