@@ -1,3 +1,17 @@
+##### nmc-3.6.53
+###### 2026-09-26
+
+**Widen the CBOR value-shape filter to all major types.** The 3.6.52
+CBOR filter only matched maps (first byte A0-BF). It now matches every
+CBOR major type: unsigned/negative integers, byte and text strings,
+arrays, maps, tags, and simple/float values. Bytes that cannot start a
+well-formed CBOR item are excluded: reserved additional-info values
+(28-30 in every major type, 31 for integers, tags, and simple values)
+and the break code 0xFF. Detection still uses the first byte of the
+value in hex form; ASCII-encoded values are not checked.
+
+---
+
 ##### nmc-3.6.52
 ###### 2026-09-26
 
