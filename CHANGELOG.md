@@ -1,3 +1,14 @@
+##### nmc-3.6.55
+###### 2026-09-26
+
+**Fix /snippet/utxo-set returning HTTP 500.** The 3.6.54 Hex tile entry
+was inserted with a line break in the middle of the single-line
+`- var __filtersValue = [...]` statement in the utxo-set snippet; pug
+rejected the template at render time (UNEXPECTED_TEXT) and the snippet
+endpoint 500'd. The array is back on one line. No behavior change.
+
+---
+
 ##### nmc-3.6.54
 ###### 2026-09-26
 
