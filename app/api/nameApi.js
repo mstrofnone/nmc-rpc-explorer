@@ -703,6 +703,16 @@ function classifyNameValue(parsed, rawValue) {
 		tags.add("i2p");
 	}
 
+	// ZeroNet: a `zeronet` key in JSON, per ZeroNet's .bit integration:
+	// either a single site address string, or a subdomain map where ""
+	// is the root site. Key-only detection on purpose: ZeroNet site
+	// addresses are plain base58check strings, indistinguishable from
+	// Bitcoin addresses, so a haystack regex would false-positive on
+	// unrelated names.
+	if (hasJson && _hasKeyDeep(parsed, (k) => k === "zeronet")) {
+		tags.add("zeronet");
+	}
+
 	// DNS record types. These are ifa-0001 §"map" sub-fields that carry
 	// individual DNS record types. Each gets its own filter so users can
 	// inspect names by specific DNS capability.
@@ -767,7 +777,7 @@ function classifyNameValue(parsed, rawValue) {
 	return tags;
 }
 
-const FILTER_KEYS = ["json", "onion", "tls", "ip", "nostr", "i2p", "a", "aaaa", "cname", "ns", "mx", "txt", "srv", "soa", "ds", "dnssec"];
+const FILTER_KEYS = ["json", "onion", "tls", "ip", "nostr", "i2p", "zeronet", "a", "aaaa", "cname", "ns", "mx", "txt", "srv", "soa", "ds", "dnssec"];
 const FILTER_LABELS = {
 	json: "Valid JSON",
 	onion: ".onion",
@@ -775,6 +785,7 @@ const FILTER_LABELS = {
 	ip: "IP addresses",
 	nostr: "Nostr",
 	i2p: "I2P",
+	zeronet: "ZeroNet",
 	a: "A (IPv4)",
 	aaaa: "AAAA (IPv6)",
 	cname: "CNAME",
@@ -793,6 +804,7 @@ const FILTER_DESCRIPTIONS = {
 	ip: "Names that publish at least one IP address (`ip` / `ip4` / `ip6` field per ifa-0001, or a literal address anywhere in the value). Combines A and AAAA for backwards compat.",
 	nostr: "Names that publish a Nostr identity — either a single `nostr.pubkey` (NameID-style) or a multi-identity `nostr.names` map for NIP-05 delegation across subdomains.",
 	i2p: "Names that publish an I2P address — either an `i2p` field in the JSON value or a valid `.b32.i2p` host (52-60 base32 characters). Does not match names that merely mention '.i2p' in text.",
+	zeronet: "Names that publish a ZeroNet site address via the `zeronet` field, either a single address string or a subdomain map (where the empty key is the root site). This is the convention ZeroNet's Namecoin integration uses for .bit sites. Detection is JSON-key-only, so text merely mentioning zeronet does not match.",
 	a: "A — IPv4 address mapping (ifa-0001 `ip` field). Maps a name to one or more IPv4 addresses.",
 	aaaa: "AAAA — IPv6 address mapping (ifa-0001 `ip6` field). Maps a name to one or more IPv6 addresses.",
 	cname: "CNAME — Canonical name alias (ifa-0001 `alias` / `translate`). Redirects this name's resolution to another name.",
