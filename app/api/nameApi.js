@@ -610,6 +610,10 @@ function parseNameIdFields(parsedValue) {
 // Returning true means "this name's value carries one of <thing>". Used to
 // classify every name during the background scan so /utxo-set can show
 // counts and link through to the filtered list.
+//
+// Tags propagate through ifa-0001 `import` references at scan time: a name
+// whose own value is just a pointer at another name's value (the common
+// d/ -> dd/ delegation pattern) inherits the imported value's tags.
 // ---------------------------------------------------------------------------
 
 const ONION_RE = /\b[a-z2-7]{16,56}\.onion\b/i;
@@ -918,6 +922,13 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 	// (name_new) names have no value yet and would lump into a phantom giant
 	// cluster otherwise.
 	const clusters = new Map();
+	// Import-aware filter index: name -> { tags: <Set of own value-shape
+	// tags>, imports: [referenced name strings] | null }. Populated during
+	// the walk for every ACTIVE name; after the walk, import references are
+	// resolved transitively so a name like d/foo that imports dd/bar (which
+	// carries e.g. a nostr block) is itself tagged nostr. Only active names
+	// enter the index, so imports of expired/nonexistent names add no tags.
+	const filterNameIndex = new Map();
 	const summary = {
 		total: 0,
 		active: 0,
@@ -1071,6 +1082,9 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 				// Value-shape classification — only run on active names so the
 				// filter counts reflect what's currently *resolvable*. Expired
 				// names are still in the index but have no operational meaning.
+				// Counting is deferred until after the walk: a name that carries
+				// only an `import` reference must inherit the imported value's
+				// tags, which needs the whole-chain index built here.
 				if (!row.expired) {
 					let parsed = null;
 					if (typeof row.value === "string") {
@@ -1079,16 +1093,19 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 							try { parsed = JSON.parse(trimmed); } catch (_e) { /* not json */ }
 						}
 					}
-					const tags = classifyNameValue(parsed, row.value);
-					for (const tag of tags) {
-						summary.filterCounts[tag]++;
-						// Cap per-filter lists so a chain with millions of matches
-						// can't blow up memory; the click-through page should treat
-						// the cap as a hint to query the live `/api/names` directly.
-						if (summary.filterLists[tag].length < filterListCap) {
-							summary.filterLists[tag].push(row.name);
+					const ownTags = classifyNameValue(parsed, row.value);
+					let importNames = null;
+					if (parsed != null && typeof parsed === "object") {
+						const found = collectAllImports(parsed);
+						for (const f of found) {
+							for (const imp of f.imports) {
+								if (!imp.name || imp.name === row.name) continue;
+								if (!importNames) importNames = [];
+								if (!importNames.includes(imp.name)) importNames.push(imp.name);
+							}
 						}
 					}
+					filterNameIndex.set(row.name, { tags: ownTags, imports: importNames });
 				}
 			}
 
@@ -1129,6 +1146,48 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 		// next iteration; the new check avoids that false positive.
 		if (hitFullPageLimit) summary.truncated = true;
 		summary.pagesScanned += pages;
+	}
+
+	// Resolve value-shape filter tags through `import` references, then
+	// count. Memoized DFS with a cycle guard and a hard depth cap so
+	// circular or pathological import chains can't wedge the scan. Cycles
+	// resolve best-effort (the in-progress name contributes only its own
+	// tags at the point the cycle closes), which is fine for a classifier.
+	const filterTagMemo = new Map();
+	const filterResolving = new Set();
+	const FILTER_IMPORT_MAX_DEPTH = 16;
+	function resolveFilterTags(name, depth) {
+		const memoHit = filterTagMemo.get(name);
+		if (memoHit) return memoHit;
+		const rec = filterNameIndex.get(name);
+		if (!rec) return null; // expired, or not present in this scan's index
+		if (filterResolving.has(name) || depth >= FILTER_IMPORT_MAX_DEPTH) {
+			return [...rec.tags];
+		}
+		filterResolving.add(name);
+		const out = new Set(rec.tags);
+		if (rec.imports) {
+			for (const impName of rec.imports) {
+				const inherited = resolveFilterTags(impName, depth + 1);
+				if (inherited) for (const t of inherited) out.add(t);
+			}
+		}
+		filterResolving.delete(name);
+		const arr = [...out];
+		filterTagMemo.set(name, arr);
+		return arr;
+	}
+	for (const [name, rec] of filterNameIndex.entries()) {
+		const finalTags = rec.imports ? resolveFilterTags(name, 0) : [...rec.tags];
+		for (const tag of finalTags) {
+			summary.filterCounts[tag]++;
+			// Cap per-filter lists so a chain with millions of matches
+			// can't blow up memory; the click-through page should treat
+			// the cap as a hint to query the live `/api/names` directly.
+			if (summary.filterLists[tag].length < filterListCap) {
+				summary.filterLists[tag].push(name);
+			}
+		}
 	}
 
 	// Rank clusters into top-N for both "current" (active only) and

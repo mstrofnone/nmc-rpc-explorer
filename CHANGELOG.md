@@ -1,3 +1,21 @@
+##### nmc-3.6.45
+###### 2026-09-25
+
+**Make the value-shape filters import-aware.**
+
+Names whose own value is only an ifa-0001 `import` pointer at another
+name (the common d/ -> dd/ delegation pattern) previously carried no
+filter tags of their own, so e.g. d/testls — whose whole value is an
+import of dd/testls — never appeared on /names/filter/nostr even
+though the value it resolves to carries a nostr block. The background
+`name_scan` walk now records each active name's import references
+alongside its own tags and resolves them transitively after the walk
+(memoized DFS, cycle-guarded, depth-capped at 16), so importer names
+inherit the imported value's filter tags. Imports of expired or
+nonexistent names add no tags; self-imports are ignored.
+
+---
+
 ##### nmc-3.6.44
 ###### 2026-09-25
 
