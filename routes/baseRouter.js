@@ -2873,8 +2873,8 @@ router.get("/mempool-name-ops", asyncHandler(async (req, res, next) => {
 // Names matching one of the value-shape filters surfaced on /utxo-set
 // (json / onion / tls / ip / nostr / i2p). Reads from the cached list that
 // the background `getNamesSummary()` walk populates — NOT live RPC, so the
-// page renders instantly. The list is capped (currently 10000 names per
-// filter); a banner surfaces that fact when truncation has occurred.
+// page renders instantly. The match lists are uncapped, so every filter
+// page shows the complete set of matching names.
 router.get("/names/filter/:filter", asyncHandler(async (req, res, next) => {
 	const filter = String(req.params.filter || "").toLowerCase();
 	res.locals.filter = filter;

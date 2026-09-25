@@ -1,3 +1,16 @@
+##### nmc-3.6.49
+###### 2026-09-25
+
+**Remove the per-filter match list cap so every filter page renders its complete result set.**
+
+Filter pages no longer truncate at 10,000 names and no longer show the
+"cached match list is capped" banner (e.g. the json filter at ~110k
+matches, or bitmessage at ~30k). The lists are bounded by the active
+name count and store string references, so uncapping costs only a few
+MB of array slots; the pages simply get large for the biggest filters.
+
+---
+
 ##### nmc-3.6.48
 ###### 2026-09-25
 
