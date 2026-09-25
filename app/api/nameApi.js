@@ -780,12 +780,25 @@ function _hasMailSrv(obj, depth = 0) {
 
 // Returns the set of value-shape labels this name's parsed value matches.
 // Inputs:
-//   parsed     — the JSON-parsed value (or null when value isn't JSON)
-//   rawValue   — the raw string value (used for non-JSON regex sweeps)
-function classifyNameValue(parsed, rawValue) {
+//   parsed        — the JSON-parsed value (or null when value isn't JSON)
+//   rawValue      — the raw string value (used for non-JSON regex sweeps)
+//   valueEncoding — name_scan's value_encoding ("ascii" | "hex"); optional
+function classifyNameValue(parsed, rawValue, valueEncoding) {
 	const tags = new Set();
 	const hasJson = parsed != null && typeof parsed === "object";
 	if (hasJson) tags.add("json");
+
+	// CBOR-encoded value. CBOR maps ("objects") open with a header byte in
+	// 0xA0-0xBF (major type 5). That byte is non-printable, so a CBOR value
+	// comes back from name_scan hex-encoded: check the first byte of the
+	// hex form. ASCII-encoded values can never carry the 0xA0-0xBF header
+	// (printable bytes are all < 0x80), so the ASCII form is not checked.
+	// Other CBOR major types (arrays, strings, numbers) are not matched;
+	// only maps are, the canonical container for a structured record.
+	if (valueEncoding === "hex" && typeof rawValue === "string" && /^[0-9a-fA-F]{2}/.test(rawValue)) {
+		const firstByte = parseInt(rawValue.substring(0, 2), 16);
+		if (firstByte >= 0xA0 && firstByte <= 0xBF) tags.add("cbor");
+	}
 
 	// Build a single big haystack of every string we can find. Cheaper than
 	// recursing through the same tree six different times.
@@ -985,9 +998,10 @@ function classifyNameValue(parsed, rawValue) {
 	return tags;
 }
 
-const FILTER_KEYS = ["json", "onion", "tls", "ip", "nostr", "i2p", "zeronet", "a", "aaaa", "cname", "ns", "mx", "txt", "srv", "soa", "ds", "dnssec", "onion-v2", "onion-v3", "email", "freenet", "btc", "btc-d", "btc-dd", "btc-id", "btc-other", "xmr", "nmc", "nmc-d", "nmc-dd", "nmc-id", "nmc-other", "bitmessage", "cjdns"];
+const FILTER_KEYS = ["json", "cbor", "onion", "tls", "ip", "nostr", "i2p", "zeronet", "a", "aaaa", "cname", "ns", "mx", "txt", "srv", "soa", "ds", "dnssec", "onion-v2", "onion-v3", "email", "freenet", "btc", "btc-d", "btc-dd", "btc-id", "btc-other", "xmr", "nmc", "nmc-d", "nmc-dd", "nmc-id", "nmc-other", "bitmessage", "bitmessage-d", "bitmessage-dd", "bitmessage-id", "bitmessage-other", "cjdns"];
 const FILTER_LABELS = {
 	json: "Valid JSON",
+	cbor: "CBOR",
 	onion: ".onion",
 	tls: "TLSA",
 	ip: "IP addresses",
@@ -1020,10 +1034,15 @@ const FILTER_LABELS = {
 	"nmc-id": "Namecoin (id/)",
 	"nmc-other": "Namecoin (other)",
 	bitmessage: "Bitmessage",
+	"bitmessage-d": "Bitmessage (d/)",
+	"bitmessage-dd": "Bitmessage (dd/)",
+	"bitmessage-id": "Bitmessage (id/)",
+	"bitmessage-other": "Bitmessage (other)",
 	cjdns: "CJDNS",
 };
 const FILTER_DESCRIPTIONS = {
 	json: "Names whose value parses as JSON. The Namecoin convention is to use JSON for any structured record (d/, id/, dd/, nft/, ...); a name without JSON is usually a one-line text payload.",
+	cbor: "Names whose value is CBOR-encoded binary rather than JSON. Detected via the first byte of the value in hex form: CBOR maps ('objects') open with a header byte in the A0-BF range (major type 5). That byte is non-printable, so CBOR values come back from name_scan hex-encoded, which is what makes the byte check possible; ASCII-encoded values cannot carry the A0-BF header byte. Other CBOR major types (arrays, strings, numbers) are not matched; only maps are, the canonical container for a structured record.",
 	onion: "Names whose value carries a Tor onion address of any version: either a `tor` / `_tor` field (NameID convention) or a `.onion` hostname embedded anywhere in the value. See the Onion v2 and Onion v3 filters for the per-version split.",
 	"onion-v2": "Names whose value carries a Tor v2 onion address: a 16-character base32 host ending in `.onion`.",
 	"onion-v3": "Names whose value carries a Tor v3 onion address: a 56-character base32 host ending in `.onion`.",
@@ -1051,6 +1070,10 @@ const FILTER_DESCRIPTIONS = {
 	"nmc-id": "id/ names whose value carries a Namecoin address, directly or via ifa-0001 import. Namespace subset of the nmc filter; the listed name's own namespace decides. Detection caveats as for nmc.",
 	"nmc-other": "Names outside the d/, dd/, and id/ namespaces whose value carries a Namecoin address, directly or via ifa-0001 import. Namespace subset of the nmc filter. Detection caveats as for nmc.",
 	bitmessage: "Names whose value carries a Bitmessage address (`BM-` + base58 payload, or a `bitmessage` JSON field). Old v2 Bitmessage payloads are base58 and can start with M/N or 1/3, so they are scrubbed before the Namecoin/Bitcoin regexes and classified here instead.",
+	"bitmessage-d": "d/ names whose value carries a Bitmessage address, directly or via ifa-0001 import. Namespace subset of the bitmessage filter; the listed name's own namespace decides. Detection caveats as for bitmessage.",
+	"bitmessage-dd": "dd/ names whose value carries a Bitmessage address, directly or via ifa-0001 import. Namespace subset of the bitmessage filter; the listed name's own namespace decides. Detection caveats as for bitmessage.",
+	"bitmessage-id": "id/ names whose value carries a Bitmessage address, directly or via ifa-0001 import. Namespace subset of the bitmessage filter; the listed name's own namespace decides. Detection caveats as for bitmessage.",
+	"bitmessage-other": "Names outside the d/, dd/, and id/ namespaces whose value carries a Bitmessage address, directly or via ifa-0001 import. Namespace subset of the bitmessage filter. Detection caveats as for bitmessage.",
 	cjdns: "Names whose value carries a cjdns IPv6 address: any IPv6 address starting with `fc` (fc00::/8, reserved for private use and used by cjdns), in full or `::`-compressed form. Also counted under the generic IP filter. Regex detection does not validate the address.",
 	txt: "TXT — Text records (ifa-0001 `txt` field). Arbitrary text data; commonly used for SPF, DKIM, domain verification, and ad-hoc metadata.",
 	srv: "SRV: Service location records (ifa-0001 `service` field, or the equivalent `srv` field). Locates a host:port for a named service (e.g. `_xmpp._tcp`).",
@@ -1279,7 +1302,7 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 							try { parsed = JSON.parse(trimmed); } catch (_e) { /* not json */ }
 						}
 					}
-					const ownTags = classifyNameValue(parsed, row.value);
+					const ownTags = classifyNameValue(parsed, row.value, row.value_encoding);
 					let importNames = null;
 					if (parsed != null && typeof parsed === "object") {
 						const found = collectAllImports(parsed);
@@ -1369,14 +1392,16 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 		// importer of this name would otherwise inherit its namespace tag).
 		const resolved = rec.imports ? resolveFilterTags(name, 0) : rec.tags;
 		const finalTags = resolved ? [...resolved] : [];
-		// Namespace split for the coin-address filters: btc / nmc also tag
-		// btc-<ns> / nmc-<ns> using the listed name's own namespace. An
-		// importer of a name carrying an address is counted under the
-		// importer's namespace, matching how the combined filters list it.
-		if (finalTags.includes("btc") || finalTags.includes("nmc")) {
+		// Namespace split for the coin-address filters: btc / nmc /
+		// bitmessage also tag <filter>-<ns> using the listed name's own
+		// namespace. An importer of a name carrying an address is counted
+		// under the importer's namespace, matching how the combined filters
+		// list it.
+		if (finalTags.includes("btc") || finalTags.includes("nmc") || finalTags.includes("bitmessage")) {
 			const ns = _filterNamespace(name);
 			if (finalTags.includes("btc")) finalTags.push(`btc-${ns}`);
 			if (finalTags.includes("nmc")) finalTags.push(`nmc-${ns}`);
+			if (finalTags.includes("bitmessage")) finalTags.push(`bitmessage-${ns}`);
 		}
 		for (const tag of finalTags) {
 			summary.filterCounts[tag]++;
