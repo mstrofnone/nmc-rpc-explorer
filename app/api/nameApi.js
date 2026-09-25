@@ -808,6 +808,12 @@ function classifyNameValue(parsed, rawValue, valueEncoding) {
 		if (!reserved) tags.add("cbor");
 	}
 
+	// Hex-encoded (binary) value. name_scan returns value_encoding "hex"
+	// whenever the raw value carries non-printable bytes; ASCII values are
+	// returned as-is. Any binary payload matches, CBOR or otherwise, so
+	// this is the superset tile for the CBOR filter.
+	if (valueEncoding === "hex") tags.add("hex");
+
 	// Build a single big haystack of every string we can find. Cheaper than
 	// recursing through the same tree six different times.
 	const strings = [];
@@ -1006,10 +1012,11 @@ function classifyNameValue(parsed, rawValue, valueEncoding) {
 	return tags;
 }
 
-const FILTER_KEYS = ["json", "cbor", "onion", "tls", "ip", "nostr", "i2p", "zeronet", "a", "aaaa", "cname", "ns", "mx", "txt", "srv", "soa", "ds", "dnssec", "onion-v2", "onion-v3", "email", "freenet", "btc", "btc-d", "btc-dd", "btc-id", "btc-other", "xmr", "nmc", "nmc-d", "nmc-dd", "nmc-id", "nmc-other", "bitmessage", "bitmessage-d", "bitmessage-dd", "bitmessage-id", "bitmessage-other", "cjdns"];
+const FILTER_KEYS = ["json", "cbor", "hex", "onion", "tls", "ip", "nostr", "i2p", "zeronet", "a", "aaaa", "cname", "ns", "mx", "txt", "srv", "soa", "ds", "dnssec", "onion-v2", "onion-v3", "email", "freenet", "btc", "btc-d", "btc-dd", "btc-id", "btc-other", "xmr", "nmc", "nmc-d", "nmc-dd", "nmc-id", "nmc-other", "bitmessage", "bitmessage-d", "bitmessage-dd", "bitmessage-id", "bitmessage-other", "cjdns"];
 const FILTER_LABELS = {
 	json: "Valid JSON",
 	cbor: "CBOR",
+	hex: "Hex",
 	onion: ".onion",
 	tls: "TLSA",
 	ip: "IP addresses",
@@ -1051,6 +1058,7 @@ const FILTER_LABELS = {
 const FILTER_DESCRIPTIONS = {
 	json: "Names whose value parses as JSON. The Namecoin convention is to use JSON for any structured record (d/, id/, dd/, nft/, ...); a name without JSON is usually a one-line text payload.",
 	cbor: "Names whose value is CBOR-encoded binary rather than JSON. Detected via the first byte of the value in hex form: a CBOR data item opens with a header byte whose high 3 bits are the major type (unsigned/negative integer, byte or text string, array, map, tag, simple/float), and every major type is matched. CBOR payloads carry non-printable bytes, so they come back from name_scan hex-encoded; ASCII-encoded values are not checked (a CBOR value made only of printable characters is indistinguishable from plain text). Bytes that cannot start a well-formed item are excluded: reserved additional-info values (28-30 in every major type, 31 for integers, tags, and simple values) and the break code 0xFF.",
+	hex: "Names whose value came back from name_scan hex-encoded: the raw value carries non-printable bytes, so it is some kind of binary payload rather than plain text or JSON. This is the superset tile for the CBOR filter: every CBOR value is hex-encoded, but a hex-encoded value can also be protobuf, a raw signature or key, an image chunk, or any other binary format. ASCII-encoded values never match.",
 	onion: "Names whose value carries a Tor onion address of any version: either a `tor` / `_tor` field (NameID convention) or a `.onion` hostname embedded anywhere in the value. See the Onion v2 and Onion v3 filters for the per-version split.",
 	"onion-v2": "Names whose value carries a Tor v2 onion address: a 16-character base32 host ending in `.onion`.",
 	"onion-v3": "Names whose value carries a Tor v3 onion address: a 56-character base32 host ending in `.onion`.",

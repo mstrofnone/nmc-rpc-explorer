@@ -1,3 +1,15 @@
+##### nmc-3.6.54
+###### 2026-09-26
+
+**Add a Hex value-shape filter.** New tile counts every name whose value
+came back from name_scan hex-encoded, meaning the raw value carries
+non-printable bytes and is some kind of binary payload rather than
+plain text or JSON. It is the superset of the CBOR filter: every CBOR
+value is hex-encoded, but a hex-encoded value can also be protobuf, a
+raw signature or key, or any other binary format.
+
+---
+
 ##### nmc-3.6.53
 ###### 2026-09-26
 
