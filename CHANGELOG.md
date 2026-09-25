@@ -1,3 +1,33 @@
+##### nmc-3.6.48
+###### 2026-09-25
+
+**Split Bitmessage out of the Namecoin filter, add a CJDNS filter, restrict TLSA fingerprints to IP-level placement, split Bitcoin/Namecoin by namespace, and raise the filter list cap to 10,000.**
+
+Old (v2) Bitmessage addresses are `BM-` plus a base58 payload that can
+start with M or N, so thousands of plain-text Bitmessage registrations
+were matching the Namecoin address regex. Bitmessage is now its own
+filter (`BM-` + base58 payload, or a `bitmessage` JSON field) and
+Bitmessage addresses are scrubbed from the haystack before the nmc and
+btc regexes run, so they no longer inflate those counts. A new `cjdns`
+filter matches cjdns IPv6 addresses (any IPv6 address starting with
+`fc`; fc00::/8 is reserved for private use), full or `::`-compressed;
+cjdns addresses also count under the generic ip filter. TLSA detection
+no longer fires on a `fingerprint` key nested inside unrelated objects
+such as `pgp`: the deprecated ifa-0001 `fingerprint` field now counts
+only where an IP address would sit (the value root, or a subdomain
+record under `map` at any nesting depth). The cached per-filter match
+list cap is raised from 5,000 to 10,000 names so large filters (e.g.
+bitmessage) render in full without the truncation banner.
+
+The Bitcoin and Namecoin filters are additionally split by namespace:
+`btc-d`, `btc-dd`, `btc-id`, and `btc-other` (and the `nmc-`
+equivalents) count names carrying an address in the d/, dd/, and id/
+namespaces versus everywhere else. The listed name's own namespace
+decides, so an importer of a name carrying an address is counted under
+the importer's namespace, matching how the combined filters list it.
+
+---
+
 ##### nmc-3.6.47
 ###### 2026-09-25
 
