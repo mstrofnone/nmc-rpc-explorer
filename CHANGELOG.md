@@ -1,3 +1,69 @@
+##### nmc-3.6.46
+###### 2026-09-25
+
+**Refine the value-shape filters: onion versions, email vs MX, SRV-implied MX, fingerprint TLSA.**
+
+Tor onion addresses now classify by version: 16-character hosts tag
+`onion-v2`, 56-character hosts tag `onion-v3`, and both keep the
+combined `onion` tag (v2 addresses have been unreachable on the
+production Tor network since 2021, so the v2 count is a curio
+metric). The ifa-0001 `email` contact field no longer counts as MX;
+it has its own `email` filter. MX still fires on the `mx` field and
+now also on SRV service names for mail protocols (`_smtp`,
+`_submission`, `_imap`, `_pop3` and TLS variants) under either the
+`service` or `srv` key, since those imply mail handling. TLSA
+detection now accepts the deprecated ifa-0001 `fingerprint` field as
+well as `tls` / `tlsa`. Explicit `null` values no longer count as
+carrying a key (ifa-0001 null suppression). All of these compose
+with import-aware tag propagation: an importer of a v2-onion name is
+itself tagged `onion-v2`.
+
+---
+
+##### nmc-3.6.46
+###### 2026-09-25
+
+**Refine the value-shape filters: onion versions, email vs MX, SRV-implied MX, fingerprint TLSA.**
+
+Tor onion addresses now classify by version: 16-character hosts tag
+`onion-v2`, 56-character hosts tag `onion-v3`, and both keep the
+combined `onion` tag (v2 addresses have been unreachable on the
+production Tor network since 2021, so the v2 count is a curio
+metric). The ifa-0001 `email` contact field no longer counts as MX;
+it has its own `email` filter. MX still fires on the `mx` field and
+now also on SRV service names for mail protocols (`_smtp`,
+`_submission`, `_imap`, `_pop3` and TLS variants) under either the
+`service` or `srv` key, since those imply mail handling. TLSA
+detection now accepts the deprecated ifa-0001 `fingerprint` field as
+well as `tls` / `tlsa`. Explicit `null` values no longer count as
+carrying a key (ifa-0001 null suppression). All of these compose
+with import-aware tag propagation: an importer of a v2-onion name is
+itself tagged `onion-v2`.
+
+---
+
+##### nmc-3.6.46
+###### 2026-09-25
+
+**Refine the value-shape filters: onion versions, email vs MX, SRV-implied MX, fingerprint TLSA.**
+
+Tor onion addresses now classify by version: 16-character hosts tag
+`onion-v2`, 56-character hosts tag `onion-v3`, and both keep the
+combined `onion` tag (v2 addresses have been unreachable on the
+production Tor network since 2021, so the v2 count is a curio
+metric). The ifa-0001 `email` contact field no longer counts as MX;
+it has its own `email` filter. MX still fires on the `mx` field and
+now also on SRV service names for mail protocols (`_smtp`,
+`_submission`, `_imap`, `_pop3` and TLS variants) under either the
+`service` or `srv` key, since those imply mail handling. TLSA
+detection now accepts the deprecated ifa-0001 `fingerprint` field as
+well as `tls` / `tlsa`. Explicit `null` values no longer count as
+carrying a key (ifa-0001 null suppression). All of these compose
+with import-aware tag propagation: an importer of a v2-onion name is
+itself tagged `onion-v2`.
+
+---
+
 ##### nmc-3.6.45
 ###### 2026-09-25
 
