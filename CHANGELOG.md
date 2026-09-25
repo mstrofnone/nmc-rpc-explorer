@@ -1,3 +1,23 @@
+##### nmc-3.6.50
+###### 2026-09-25
+
+**Validate TLSA fingerprint values, scrub ZeroNet proxy URLs from the Bitcoin filter, and document name outputs on the UTXO Set page.**
+
+- The deprecated ifa-0001 `fingerprint` field now tags tls only when the
+  value actually looks like a hex fingerprint (40-128 hex chars,
+  optional colon or space separators). Values holding prose or contact
+  addresses, such as a Bitmessage address parked in `fingerprint`
+  (d/haasonlineautotrader), no longer tag tls.
+- Addresses embedded in ZeroNet local-proxy URLs of the form
+  `127.0.0.1:43110/<site address>` no longer tag btc; the site address
+  is a ZeroNet-ism, not a Bitcoin address (d/mailzero false positive).
+- The UTXO Set explainer on /utxo-set now covers name outputs: a
+  name_firstupdate output locks a small amount of NMC with the name's
+  data, every name_update spends and replaces it, and expiry turns it
+  back into an ordinary spendable output.
+
+---
+
 ##### nmc-3.6.49
 ###### 2026-09-25
 

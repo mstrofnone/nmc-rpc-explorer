@@ -34,6 +34,7 @@ block content
 						span.badge.bg-light.text-dark UTXO #3 (0.75 NMC)
 
 		.mb-2 With this in mind, the <b>UTXO Set</b> is the set of all UTXOs and defines all spendable NMC units.
+		.mb-2 Name operations are outputs too. A <b>name output</b> (created by <code>name_firstupdate</code>, replaced by every <code>name_update</code>) locks a small amount of NMC (typically 0.01 NMC) together with the name's data, and counts as part of the UTXO Set while the name is active. Updating or transferring a name spends and destroys the previous name output and replaces it with a new one carrying the new data, just like the smelting example above. When a name expires, its name output becomes an ordinary spendable output again and the locked coins can be recovered.
 		.mb-2 Every NMC node is capable of <b>independently and trustlessly</b> verifying the entire UTXO Set! Your node has done (or is currently doing) that verification.
 
 		| (Note that the verification process can be <i>quite</i> slow, depending on the node's hardware configuration and indexing options used.)
