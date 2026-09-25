@@ -1,3 +1,15 @@
+##### nmc-3.6.51
+###### 2026-09-25
+
+**Correct the name-expiry claim on the UTXO Set page.** The 3.6.50
+explainer wrongly said expired name outputs become ordinary spendable
+outputs whose coins can be recovered. Per namecoin-core consensus
+(src/names/main.cpp, ExpireNames), expiry spends the name coin out of
+the UTXO set with no replacement output: the locked NMC is burned and
+is not recoverable by anyone.
+
+---
+
 ##### nmc-3.6.50
 ###### 2026-09-25
 
