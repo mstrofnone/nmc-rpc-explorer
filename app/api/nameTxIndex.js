@@ -228,9 +228,15 @@ function createNameTxIndex(options = {}) {
 	}
 
 	// Drop window entries below `newStart` (called as the tip advances).
+	// Returns true when any per-name window state was dropped, so the
+	// caller can dirty the board cache: a quiet stretch of op-less blocks
+	// still slides the window, and the cached window board must not
+	// outlive the entries it ranked.
 	function expireWindowBelow(newStart) {
+		let dropped = false;
 		for (const [h, bucket] of windowHeightIndex) {
 			if (h >= newStart) continue;
+			dropped = true;
 			for (const [name, cnt] of bucket) {
 				const rec = windowByName.get(name);
 				if (!rec) continue;
@@ -249,6 +255,7 @@ function createNameTxIndex(options = {}) {
 			}
 			windowHeightIndex.delete(h);
 		}
+		return dropped;
 	}
 
 	function writeStateSync() {
@@ -460,7 +467,7 @@ function createNameTxIndex(options = {}) {
 				await indexFetchedBlock(block);
 				state.tipIndexed = h;
 				state.tipHash = block.hash || null;
-				expireWindowBelow(windowStart());
+				if (expireWindowBelow(windowStart())) boardsDirty = true;
 				// Persist per block: a crash between blocks then re-indexes at
 				// most one already-logged block on resume.
 				state.updatedAt = Date.now();

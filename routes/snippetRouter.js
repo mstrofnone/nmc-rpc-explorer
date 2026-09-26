@@ -213,6 +213,18 @@ router.get("/utxo-set", asyncHandler(async (req, res, next) => {
 		}
 	}
 
+	// nmc-3.6.60: "Most updated names" leaderboards, rendered in a new
+	// section directly beneath the by-namespace breakdown. Served from
+	// the index module's cached board snapshot (recomputed at most once
+	// a minute and only when the underlying aggregates changed), never
+	// recomputed per request from the raw op log. Available in both
+	// count modes: the boards always count name operations, so they do
+	// not follow the names/txs tile toggle.
+	res.locals.nameTxBoards = null;
+	if (txIdxStatus.enabled && txIdxStatus.loaded) {
+		res.locals.nameTxBoards = nameTxIndex.getBoards({ limit: 10 });
+	}
+
 	res.render("snippets/utxo-set");
 }));
 
