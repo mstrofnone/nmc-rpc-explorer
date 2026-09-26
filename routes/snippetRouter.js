@@ -196,11 +196,12 @@ router.get("/utxo-set", asyncHandler(async (req, res, next) => {
 		// counts over them are exact.
 		res.locals.filterTxCounts = nameTxIndex.countTxsForFilters(res.locals.namesSummary.filterLists, ws);
 		if (res.locals.namesSummary.filterListsAllTime) {
-			// All-time lists are capped (ALLTIME_FILTER_LIST_CAP=500). Where
-			// the cap bound a list, a tx count over the partial list would
-			// silently undercount, so that tile is suppressed with a note.
-			// A list whose true count fits the cap is complete and exact:
-			// counts[key] == lists[key].length iff the list is uncapped-full.
+			// Since nmc-3.6.64 all-time lists are uncapped, so every list is
+			// complete and every tile gets an exact tx count. The
+			// completeness check below is kept as a defensive guard: if a
+			// pre-3.6.64 capped snapshot were ever carried forward, a tx
+			// count over a partial list would silently undercount, so that
+			// tile would be suppressed with a note instead.
 			const atLists = res.locals.namesSummary.filterListsAllTime;
 			const atCounts = res.locals.namesSummary.filterCountsAllTime || {};
 			const completeLists = {};

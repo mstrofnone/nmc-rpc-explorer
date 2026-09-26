@@ -1363,7 +1363,11 @@ const FILTER_DESCRIPTIONS = {
 // lazy-loads it on first use.
 // ---------------------------------------------------------------------------
 const ALLTIME_FILTER_MIN_BLOCKS = 36000;
-const ALLTIME_FILTER_LIST_CAP = 500;
+// nmc-3.6.64: all-time filter match lists are no longer capped (user
+// request). Lists store references to name strings that already live in
+// the scan indexes, so the extra memory is just array slots, and every
+// /names/filter page can render the complete all-time match set.
+const ALLTIME_FILTER_LIST_CAP = Infinity;
 const allTimeFilterFileCache = utils.fileCache(config.filesystemCacheDir, "names-filter-alltime");
 let allTimeFilterSnapshot = null;
 let allTimeFilterSnapshotLoaded = false;
@@ -1372,7 +1376,10 @@ function loadAllTimeFilterSnapshot() {
 	if (allTimeFilterSnapshotLoaded) return allTimeFilterSnapshot;
 	allTimeFilterSnapshotLoaded = true;
 	const snap = allTimeFilterFileCache.tryLoadJson();
-	if (snap && typeof snap === "object" && typeof snap.height === "number" && snap.counts && typeof snap.counts === "object") {
+	// nmc-3.6.64: snapshot format v2. v1 snapshots hold capped (first-500)
+	// match lists; they are ignored so the next summary walk recomputes
+	// the full uncapped lists instead of serving stale partial lists.
+	if (snap && typeof snap === "object" && snap.version === 2 && typeof snap.height === "number" && snap.counts && typeof snap.counts === "object") {
 		allTimeFilterSnapshot = snap;
 	}
 	return allTimeFilterSnapshot;
@@ -1761,8 +1768,10 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 	// name resolves against current (active) values only -
 	// resolveFilterTags looks imports up in the active-only index, so an
 	// expired name that imports another expired name inherits no tags.
-	// Counts are exact; per-filter match lists are capped at
-	// allTimeListCap because expired-name volume is large.
+	// Counts are exact and, since nmc-3.6.64, per-filter match lists are
+	// uncapped: every name string is already held by the scan indexes, so
+	// the lists cost only array slots and the filter pages render the
+	// complete all-time match set.
 	if (filterNameIndexExpired && !scanAborted) {
 		const allTimeStartedAt = Date.now();
 		const atCounts = Object.fromEntries(FILTER_KEYS.map(k => [k, 0]));
@@ -1786,7 +1795,7 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 			tallyFilterName(name, baseTags, atCounts, atLists, allTimeListCap);
 		}
 		const snap = {
-			version: 1,
+			version: 2,
 			height: tipHeight,
 			scannedAt: Date.now(),
 			elapsedMs: Date.now() - allTimeStartedAt,

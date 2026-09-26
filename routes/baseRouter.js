@@ -2899,7 +2899,7 @@ router.get("/names/filter/:filter", asyncHandler(async (req, res, next) => {
 
 	// nmc-3.6.61: active names (default, from the 30-min name_scan walk)
 	// vs all-time (active + expired, from the 3.6.58 all-time pass,
-	// refreshed every ~36,000 blocks and capped per filter).
+	// refreshed every ~36,000 blocks; uncapped per filter since 3.6.64).
 	res.locals.filterScope = (req.query.scope == "alltime") ? "alltime" : "active";
 	res.locals.filterAllTimeReady = !!(global.namesSummary && global.namesSummary.filterListsAllTime);
 	res.locals.filterAllTimeHeight = (global.namesSummary && global.namesSummary.filterAllTimeHeight != null) ? global.namesSummary.filterAllTimeHeight : null;

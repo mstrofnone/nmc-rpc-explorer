@@ -1,3 +1,23 @@
+##### nmc-3.6.64
+###### 2026-09-27
+
+**All-time filter match lists are no longer capped at 500 names (user
+request).** The 3.6.58 all-time pass tallied active names first and
+expired names second, keeping only the first 500 matches per filter -
+so for any filter with more than 500 active matches (e.g. ip: 12,416
+all-time matches) the /names/filter/<key>?scope=alltime page showed
+only active names and never the long tail of expired names, which are
+exactly the rows whose txs (36k) count is 0. Lists are now complete:
+every all-time filter page renders its full match set with per-name tx
+columns, and the "cached match list is capped" warning is gone. The
+on-disk all-time snapshot format is bumped to v2; v1 snapshots (capped
+lists) are ignored on load so the next summary walk recomputes full
+lists automatically. With complete lists every all-time tile also gets
+an exact txs count in txs mode - the "n/a: match list capped"
+suppression can no longer trigger (the guard stays as a defensive
+fallback). Lists store string references already held by the scan
+indexes, so the extra memory is only array slots.
+
 ##### nmc-3.6.63
 ###### 2026-09-26
 
