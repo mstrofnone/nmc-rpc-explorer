@@ -1032,8 +1032,24 @@ async function refreshNamesSummary() {
 		if (Number.isFinite(expSoon) && expSoon > 0) opts.expiringSoonBlocks = expSoon;
 		const expRecent = parseInt(process.env.BTCEXP_NAMES_RECENTLY_EXPIRED_BLOCKS, 10);
 		if (Number.isFinite(expRecent) && expRecent > 0) opts.recentlyExpiredBlocks = expRecent;
+		// All-time filter pass cadence, in blocks (default 36,000; the pass
+		// fires when the tip has advanced that far since the last run, or
+		// when no run has ever completed). Operators on non-mainnet chains
+		// can shrink it here.
+		const atBlocks = parseInt(process.env.BTCEXP_NAMES_ALLTIME_FILTER_BLOCKS, 10);
+		if (Number.isFinite(atBlocks) && atBlocks > 0) opts.allTimeMinBlocks = atBlocks;
+		// The all-time filter pass is block-height-triggered, so the walk
+		// needs the current tip. Cheap and best-effort: without it the
+		// all-time pass is simply skipped this run.
+		try {
+			const chainInfo = await coreApi.getBlockchainInfo();
+			if (chainInfo && Number.isFinite(chainInfo.blocks)) opts.tipHeight = chainInfo.blocks;
+		} catch { /* leave tipHeight unset */ }
 		global.namesSummary = await nameApi.getNamesSummary(opts);
 		debugLog(`Refreshed names summary: total=${global.namesSummary.total} active=${global.namesSummary.active} expired=${global.namesSummary.expired} expiringSoon=${global.namesSummary.expiringSoonTotal} recentlyExpired=${global.namesSummary.recentlyExpiredTotal} elapsedMs=${global.namesSummary.elapsedMs}`);
+		if (global.namesSummary && global.namesSummary.filterAllTimeRefreshed) {
+			debugLog(`Refreshed all-time filter summary: height=${global.namesSummary.filterAllTimeHeight} total=${global.namesSummary.total} active=${global.namesSummary.active} expired=${global.namesSummary.expired} elapsedMs=${global.namesSummary.filterAllTimeElapsedMs}`);
+		}
 	} catch (e) {
 		debugLog("refreshNamesSummary error: " + e.message);
 		global.namesSummary = null;
