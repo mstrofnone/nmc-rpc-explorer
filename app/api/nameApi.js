@@ -851,6 +851,16 @@ function classifyNameValue(parsed, rawValue, valueEncoding) {
 		tags.add("tls");
 	}
 
+	// SSHFP - ifa-0001-style `sshfp` field: SSH host-key fingerprints, the
+	// SSH analog of the TLSA `tls` field above. Detection is JSON-key-only,
+	// same convention as the zeronet filter: text merely mentioning sshfp
+	// does not match. `_sshfp` is deliberately not accepted: SSHFP records
+	// have no underscore service-prefix form in DNS (unlike SRV or TLSA),
+	// and the tls check likewise does not accept `_tls`.
+	if (hasJson && _hasKeyDeep(parsed, (k) => k === "sshfp")) {
+		tags.add("sshfp");
+	}
+
 	// IPs — ifa-0001 fields `ip` (v4) and `ip6` (v6), or any literal address
 	// in any string value across the record.
 	if ((hasJson && _hasKeyDeep(parsed, (k) => k === "ip" || k === "ip4" || k === "ip6")) ||
@@ -1012,13 +1022,14 @@ function classifyNameValue(parsed, rawValue, valueEncoding) {
 	return tags;
 }
 
-const FILTER_KEYS = ["json", "cbor", "hex", "onion", "tls", "ip", "nostr", "i2p", "zeronet", "a", "aaaa", "cname", "ns", "mx", "txt", "srv", "soa", "ds", "dnssec", "onion-v2", "onion-v3", "email", "freenet", "btc", "btc-d", "btc-dd", "btc-id", "btc-other", "xmr", "nmc", "nmc-d", "nmc-dd", "nmc-id", "nmc-other", "bitmessage", "bitmessage-d", "bitmessage-dd", "bitmessage-id", "bitmessage-other", "cjdns"];
+const FILTER_KEYS = ["json", "cbor", "hex", "onion", "tls", "sshfp", "ip", "nostr", "i2p", "zeronet", "a", "aaaa", "cname", "ns", "mx", "txt", "srv", "soa", "ds", "dnssec", "onion-v2", "onion-v3", "email", "freenet", "btc", "btc-d", "btc-dd", "btc-id", "btc-other", "xmr", "nmc", "nmc-d", "nmc-dd", "nmc-id", "nmc-other", "bitmessage", "bitmessage-d", "bitmessage-dd", "bitmessage-id", "bitmessage-other", "cjdns"];
 const FILTER_LABELS = {
 	json: "Valid JSON",
 	cbor: "CBOR",
 	hex: "Hex",
 	onion: ".onion",
 	tls: "TLSA",
+	sshfp: "SSHFP",
 	ip: "IP addresses",
 	nostr: "Nostr",
 	i2p: "I2P",
@@ -1063,6 +1074,7 @@ const FILTER_DESCRIPTIONS = {
 	"onion-v2": "Names whose value carries a Tor v2 onion address: a 16-character base32 host ending in `.onion`.",
 	"onion-v3": "Names whose value carries a Tor v3 onion address: a 56-character base32 host ending in `.onion`.",
 	tls: "Names that publish TLSA records (ifa-0001 `tls` / `tlsa` field, or the deprecated `fingerprint` field where an IP address would sit: the value root or a subdomain record under `map`, at any nesting depth, and only when the value looks like a hex fingerprint; a `fingerprint` nested in other objects such as `pgp`, or holding non-hex prose, does not count). The `tls` field is an array of `[usage, selector, mtype, hash]` tuples used to pin a host's TLS certificate via Namecoin instead of a public CA. Used by .bit relays for DANE TLS pinning.",
+	sshfp: "Names that publish SSHFP records via an `sshfp` field (SSH host-key fingerprints, the SSH analog of the TLSA `tls` field). The field carries RFC 4255 SSHFP data (algorithm, fingerprint type, fingerprint) used to pin a host's SSH host key via Namecoin instead of trust-on-first-use. Detection is JSON-key-only, so text merely mentioning sshfp does not match. `_sshfp` does not match either: SSHFP has no underscore service-prefix form in DNS, unlike SRV or TLSA.",
 	ip: "Names that publish at least one IP address (`ip` / `ip4` / `ip6` field per ifa-0001, or a literal address anywhere in the value). Combines A and AAAA for backwards compat.",
 	nostr: "Names that publish a Nostr identity — either a single `nostr.pubkey` (NameID-style) or a multi-identity `nostr.names` map for NIP-05 delegation across subdomains.",
 	i2p: "Names that publish an I2P address — either an `i2p` field in the JSON value or a valid `.b32.i2p` host (52-60 base32 characters). Does not match names that merely mention '.i2p' in text.",

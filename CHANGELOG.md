@@ -1,3 +1,22 @@
+##### nmc-3.6.56
+###### 2026-09-26
+
+**Add an SSHFP value-shape filter.** New tile counts names whose JSON
+value carries an `sshfp` field: SSH host-key fingerprints, the SSH
+analog of the TLSA `tls` field (RFC 4255), used to pin a host's SSH
+host key via Namecoin instead of trust-on-first-use. Detection is
+JSON-key-only, same convention as the ZeroNet filter: text merely
+mentioning sshfp does not match, and neither does `_sshfp` (SSHFP has
+no underscore service-prefix form in DNS, unlike SRV or TLSA; the TLSA
+check likewise does not accept `_tls`). Registered between TLSA and IP
+in the filter list so related records cluster together. A full-chain
+sample (name_scan over ~793k names, ~379k active) found zero values
+carrying or even mentioning sshfp, so the tile currently reads 0 -
+same situation as the Hex and CBOR tiles, which are also legitimately
+empty.
+
+---
+
 ##### nmc-3.6.55
 ###### 2026-09-26
 
