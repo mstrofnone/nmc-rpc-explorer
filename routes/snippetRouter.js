@@ -171,6 +171,48 @@ router.get("/utxo-set", asyncHandler(async (req, res, next) => {
 	res.locals.namesSummaryPending = global.namesSummaryPending;
 	res.locals.nameApi = require("./../app/api/nameApi.js");
 
+	// nmc-3.6.59: names/txs count-mode toggle for the filter tiles, via
+	// ?countMode=txs (server-rendered; default names). txs mode counts name
+	// operations for each filter's current match list over the tx index's
+	// trailing 36,000-block window. Counts are computed at render time from
+	// the live index (the match lists themselves come from the 30-min
+	// summary walk).
+	res.locals.filterCountMode = (req.query.countMode == "txs") ? "txs" : "names";
+	const nameTxIndex = require("./../app/api/nameTxIndex.js");
+	const txIdxStatus = nameTxIndex.indexStatus();
+	if (txIdxStatus.loaded && txIdxStatus.tipIndexed >= 0) {
+		const ws = txIdxStatus.windowStart;
+		const lo = Math.max(txIdxStatus.backfillDone == null ? txIdxStatus.tipIndexed + 1 : txIdxStatus.backfillDone, ws);
+		txIdxStatus.windowCoveragePct = Math.min(100, Math.round(100 * (txIdxStatus.tipIndexed - lo + 1) / (txIdxStatus.tipIndexed - ws + 1)));
+	} else {
+		txIdxStatus.windowCoveragePct = 0;
+	}
+	res.locals.nameTxIndexStatus = txIdxStatus;
+	res.locals.filterTxCounts = null;
+	res.locals.filterTxCountsAllTime = null;
+	if (res.locals.filterCountMode == "txs" && txIdxStatus.enabled && txIdxStatus.loaded && res.locals.namesSummary) {
+		const ws = txIdxStatus.windowStart;
+		// Active filter lists are uncapped (filterListCap=Infinity), so tx
+		// counts over them are exact.
+		res.locals.filterTxCounts = nameTxIndex.countTxsForFilters(res.locals.namesSummary.filterLists, ws);
+		if (res.locals.namesSummary.filterListsAllTime) {
+			// All-time lists are capped (ALLTIME_FILTER_LIST_CAP=500). Where
+			// the cap bound a list, a tx count over the partial list would
+			// silently undercount, so that tile is suppressed with a note.
+			// A list whose true count fits the cap is complete and exact:
+			// counts[key] == lists[key].length iff the list is uncapped-full.
+			const atLists = res.locals.namesSummary.filterListsAllTime;
+			const atCounts = res.locals.namesSummary.filterCountsAllTime || {};
+			const completeLists = {};
+			for (const k of Object.keys(atLists)) {
+				if ((atLists[k] || []).length >= (atCounts[k] || 0)) completeLists[k] = atLists[k];
+			}
+			// Keys absent from completeLists stay absent from the result map;
+			// the template renders the suppression note for them.
+			res.locals.filterTxCountsAllTime = nameTxIndex.countTxsForFilters(completeLists, ws);
+		}
+	}
+
 	res.render("snippets/utxo-set");
 }));
 

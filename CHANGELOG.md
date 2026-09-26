@@ -1,3 +1,35 @@
+##### nmc-3.6.59
+###### 2026-09-26
+
+**Add a persistent name-operation transaction index and a names/txs
+count-mode toggle on the /utxo-set filter tiles.** A new background
+module (app/api/nameTxIndex.js) indexes every name operation on chain
+(name_new, name_firstupdate, name_update) into an append-only op log
+plus a tiny cursor file in the explorer filesystem cache dir
+(cache/names-tx-index-ops.log and cache/names-tx-index.json). The
+index starts alongside the names-summary walk: a full-chain backfill
+runs newest-first in gently paced batches (so the 30-min name_scan
+walk keeps RPC priority), resumes from the cursor after restarts, and
+a tail indexer appends new blocks once they have 6 confirmations.
+
+Every Value-shape and DNS record filter tile on /utxo-set (including
+the all-time sections added in 3.6.58) now has a names|txs toggle in
+its section header, switched via ?countMode=txs and rendered entirely
+server-side. In txs mode each tile counts name operations involving
+the names in that filter's current match list over the last 36,000
+blocks, labeled "txs (last 36k blocks, by current name value)"; the
+default names mode is unchanged. Active-filter match lists are
+uncapped so their tx counts are exact. All-time match lists are
+capped at 500 names (3.6.58), so tx counts are only shown where the
+full list fits the cap; tiles whose list was capped show an explicit
+"n/a: match list capped" note instead of a silently-undercounted
+number. While the index is still backfilling the 36k-block window a
+coverage notice marks the tx counts as partial. Operators can disable
+the index with BTCEXP_DISABLE_NAME_TX_INDEX=true (the toggle then
+reports tx counts unavailable).
+
+---
+
 ##### nmc-3.6.58
 ###### 2026-09-26
 
