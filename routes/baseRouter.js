@@ -2879,6 +2879,15 @@ router.get("/mempool-name-ops", asyncHandler(async (req, res, next) => {
 // the background `getNamesSummary()` walk populates — NOT live RPC, so the
 // page renders instantly. The match lists are uncapped, so every filter
 // page shows the complete set of matching names.
+// nmc-3.6.61: every rendered name row gains its transaction counts from
+// the persistent name-tx index (3.6.59): txs (36k) over the trailing
+// 36,000 blocks and txs (all time) over the whole indexed region, counted
+// in ONE batched call per rendered page of names (never per-row). With
+// counts available the match list renders as a paginated table (the
+// counting only ever touches the rendered page); without the index the
+// page falls back to the pre-3.6.61 flat link grid, unchanged. A new
+// ?scope=alltime variant serves the 3.6.58 all-time (active + expired)
+// match lists with the same treatment.
 router.get("/names/filter/:filter", asyncHandler(async (req, res, next) => {
 	const filter = String(req.params.filter || "").toLowerCase();
 	res.locals.filter = filter;
@@ -2887,6 +2896,13 @@ router.get("/names/filter/:filter", asyncHandler(async (req, res, next) => {
 	res.locals.knownFilters = nameApi.FILTER_KEYS;
 	res.locals.namesSummary = global.namesSummary || null;
 	res.locals.namesSummaryPending = !!global.namesSummaryPending;
+
+	// nmc-3.6.61: active names (default, from the 30-min name_scan walk)
+	// vs all-time (active + expired, from the 3.6.58 all-time pass,
+	// refreshed every ~36,000 blocks and capped per filter).
+	res.locals.filterScope = (req.query.scope == "alltime") ? "alltime" : "active";
+	res.locals.filterAllTimeReady = !!(global.namesSummary && global.namesSummary.filterListsAllTime);
+	res.locals.filterAllTimeHeight = (global.namesSummary && global.namesSummary.filterAllTimeHeight != null) ? global.namesSummary.filterAllTimeHeight : null;
 
 	if (!nameApi.FILTER_KEYS.includes(filter)) {
 		res.status(404);
@@ -2902,13 +2918,41 @@ router.get("/names/filter/:filter", asyncHandler(async (req, res, next) => {
 	let matchedCount = 0;
 	let truncated = false;
 	if (global.namesSummary && global.namesSummary.filterLists && global.namesSummary.filterCounts) {
-		matchedNames = global.namesSummary.filterLists[filter] || [];
-		matchedCount = global.namesSummary.filterCounts[filter] || 0;
+		if (res.locals.filterScope == "alltime" && global.namesSummary.filterListsAllTime) {
+			matchedNames = global.namesSummary.filterListsAllTime[filter] || [];
+			matchedCount = (global.namesSummary.filterCountsAllTime || {})[filter] || 0;
+		} else {
+			matchedNames = global.namesSummary.filterLists[filter] || [];
+			matchedCount = global.namesSummary.filterCounts[filter] || 0;
+		}
 		truncated = matchedCount > matchedNames.length;
 	}
 	res.locals.matchedNames = matchedNames;
 	res.locals.matchedCount = matchedCount;
 	res.locals.truncated = truncated;
+
+	// nmc-3.6.61: per-name tx counts for the rendered page of the match
+	// list. One batched countNameOpsForFilterPage call per request; only
+	// the rendered page slice is counted. The windowCoveragePct decoration
+	// mirrors the /utxo-set snippet route (3.6.59/3.6.60). The template
+	// falls back to the legacy flat grid whenever nameTxPage stays null
+	// (index disabled, still loading, or no matches).
+	const nameTxIndex = require("./../app/api/nameTxIndex.js");
+	const txIdxStatus = nameTxIndex.indexStatus();
+	if (txIdxStatus.loaded && txIdxStatus.tipIndexed >= 0) {
+		const ws = txIdxStatus.windowStart;
+		const lo = Math.max(txIdxStatus.backfillDone == null ? txIdxStatus.tipIndexed + 1 : txIdxStatus.backfillDone, ws);
+		txIdxStatus.windowCoveragePct = Math.min(100, Math.round(100 * (txIdxStatus.tipIndexed - lo + 1) / (txIdxStatus.tipIndexed - ws + 1)));
+	} else {
+		txIdxStatus.windowCoveragePct = 0;
+	}
+	res.locals.nameTxIndexStatus = txIdxStatus;
+	res.locals.nameTxPage = null;
+	if (txIdxStatus.enabled && txIdxStatus.loaded && matchedNames.length > 0) {
+		const limit = Math.min(500, Math.max(25, parseInt(req.query.limit || "200", 10) || 200));
+		const offset = Math.max(0, parseInt(req.query.offset || "0", 10) || 0);
+		res.locals.nameTxPage = nameTxIndex.countNameOpsForFilterPage(matchedNames, offset, limit);
+	}
 	res.render("names-filter");
 	next();
 }));

@@ -1,3 +1,27 @@
+##### nmc-3.6.61
+###### 2026-09-26
+
+**Add per-name transaction counts to every /names/filter/<key>
+click-through page.** Each rendered name row now shows two counts from
+the persistent name-tx index (3.6.59): txs (36k), the name_firstupdate
++ name_update operations involving that name over the trailing 36,000
+blocks, and txs (all time), the same ops over the whole indexed region.
+The all-time column is exact once the index backfill completes; while
+the indexed region is still partial, an "indexing: X% complete (through
+block Y)" note marks the affected column, in the same style as the
+3.6.60 most-updated boards (window coverage for the 36k column, overall
+backfill progress for the all-time column). Counts are computed in ONE
+batched index call per rendered page of names (never per-row queries,
+never raw log scans), and the match list renders as a paginated table
+(200 rows per page, limit/offset links) so pagination only ever counts
+the names on the page being displayed. Name links to /name/<n> are
+unchanged, and rows with zero indexed ops in a scope show a plain 0.
+The filter pages also gain an active vs all-time scope toggle
+(?scope=alltime) serving the 3.6.58 all-time (active + expired) match
+lists with the same per-name counts. On instances running with
+BTCEXP_DISABLE_NAME_TX_INDEX=true (or while the index is still loading)
+the pages fall back to the pre-3.6.61 flat link grid, unchanged.
+
 ##### nmc-3.6.60
 ###### 2026-09-26
 
