@@ -23,6 +23,10 @@ const { bech32 } = require("bech32");
 const config = require("../config.js");
 const utils = require("../utils.js");
 
+// Same debug namespace as app.js so index-wiring log lines land wherever
+// the app's own "Refreshed names summary" lines already go.
+const debugLog = require("debug")("btcexp:app");
+
 // namecoind error codes we treat as authoritative "this name has no live
 // record" answers.  -4 covers both "name expired" and "name never
 // existed" (per namecoind src/wallet/rpcnames.cpp). Any OTHER error —
@@ -1865,6 +1869,21 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 	summary.recentlyExpired.sort((a, b) => b.expires_in - a.expires_in);
 	if (summary.recentlyExpired.length > expiringListCap) {
 		summary.recentlyExpired = summary.recentlyExpired.slice(0, expiringListCap);
+	}
+
+	// nmc-3.6.59: persistent name-op tx index. The shared instance starts
+	// (once) alongside the first summary walk, and every summary run kicks
+	// the tail indexer so newly confirmed blocks are indexed promptly. The
+	// full-chain backfill continues gently on the module's own throttled
+	// loop (batch + sleep), so this 30-min walk keeps RPC priority. All
+	// failures are captured in the index status - a tx-index hiccup must
+	// never fail the summary walk.
+	try {
+		const nameTxIndex = require("./nameTxIndex.js");
+		nameTxIndex.startShared({ logger: debugLog });
+		nameTxIndex.indexNewBlocks().catch(() => { /* recorded in index status */ });
+	} catch (e) {
+		debugLog("nameTxIndex wiring error: " + e.message);
 	}
 
 	summary.scannedAt = Date.now();

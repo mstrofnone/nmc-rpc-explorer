@@ -86,28 +86,81 @@ else
 									span.text-muted …
 									div.small.text-muted.mt-1 Computing in background
 						if (namesSummary && namesSummary.filterCounts)
+							// nmc-3.6.59: names/txs count-mode toggle state. In txs mode
+							// each filter tile counts name operations involving the
+							// filter's current match list over the tx index's trailing
+							// 36,000-block window instead of counting names.
+							- var __txMode = (typeof filterCountMode != "undefined" && filterCountMode == "txs")
+							- var __txReady = (__txMode && typeof nameTxIndexStatus != "undefined" && nameTxIndexStatus && nameTxIndexStatus.enabled && nameTxIndexStatus.loaded)
+							mixin countModeToggle()
+								span.ms-2(title="names: count of matching names (from the 30-min name_scan walk). txs: name operations (transactions) involving the matching names over the last 36,000 blocks, from the persistent name-tx index; match lists are by current name value.", data-bs-toggle="tooltip", data-bs-html="true")
+									if (__txMode)
+										a.text-muted.text-decoration-none(href="./utxo-set") names
+										span.text-muted.mx-1 |
+										span.fw-bold txs
+									else
+										span.fw-bold names
+										span.text-muted.mx-1 |
+										a.text-muted.text-decoration-none(href="./utxo-set?countMode=txs") txs
+							mixin countModeNotes()
+								if (__txMode)
+									div.small.text-muted.mb-2
+										div txs (last 36k blocks, by current name value)
+										if (!nameTxIndexStatus || !nameTxIndexStatus.enabled)
+											div tx counts unavailable: the name-tx index is disabled on this instance.
+										else if (!nameTxIndexStatus.loaded)
+											div tx counts unavailable: the name-tx index is still loading (replaying the op log); reload in a moment.
+										else if (!nameTxIndexStatus.windowComplete)
+											div name-tx index is still backfilling the window (#{nameTxIndexStatus.windowCoveragePct}% covered); tx counts are partial.
 							mixin filterTile(__f)
 								- var __c = namesSummary.filterCounts[__f.key] || 0
+								- var __tx = (__txReady && filterTxCounts && filterTxCounts[__f.key] != null) ? filterTxCounts[__f.key] : null
 								.col
 									a.text-decoration-none.d-block.h-100.p-3.rounded-2.border.border-card-highlight.text-body(href=`./names/filter/${__f.key}`, title=__f.title || "", data-bs-toggle=__f.title ? "tooltip" : null, data-bs-html="true")
 										div.small.text-muted= __f.label
 										div.h5.fw-light.mb-0.mt-1
-											span= __c.toLocaleString()
-										if (__c > 0 && namesSummary.active)
+											if (__txMode)
+												if (__tx != null)
+													span= __tx.toLocaleString()
+													span.text-muted.small.ms-1 txs
+												else
+													span.text-muted -
+											else
+												span= __c.toLocaleString()
+										if (__txMode)
+											if (__tx != null)
+												div.small.text-muted last 36k blocks
+										else if (__c > 0 && namesSummary.active)
 											div.small.text-muted #{((__c / namesSummary.active) * 100).toFixed(1)}% of active
 							mixin filterTileAllTime(__f)
 								- var __c = (namesSummary.filterCountsAllTime && namesSummary.filterCountsAllTime[__f.key]) || 0
+								- var __txa = (__txReady && filterTxCountsAllTime && filterTxCountsAllTime[__f.key] != null) ? filterTxCountsAllTime[__f.key] : null
+								- var __txCapped = (__txReady && filterTxCountsAllTime && filterTxCountsAllTime[__f.key] == null)
 								.col
 									.d-block.h-100.p-3.rounded-2.border.border-card-highlight.text-body(title=__f.title || "", data-bs-toggle=__f.title ? "tooltip" : null, data-bs-html="true")
 										div.small.text-muted= __f.label
 										div.h5.fw-light.mb-0.mt-1
-											span= __c.toLocaleString()
-										if (__c > 0 && namesSummary.filterAllTimeTotal)
+											if (__txMode)
+												if (__txa != null)
+													span= __txa.toLocaleString()
+													span.text-muted.small.ms-1 txs
+												else
+													span.text-muted -
+											else
+												span= __c.toLocaleString()
+										if (__txMode)
+											if (__txa != null)
+												div.small.text-muted last 36k blocks
+											else if (__txCapped)
+												div.small.text-muted n/a: match list capped
+										else if (__c > 0 && namesSummary.filterAllTimeTotal)
 											div.small.text-muted #{((__c / namesSummary.filterAllTimeTotal) * 100).toFixed(1)}% of total
 							.mt-3
 								div.text-muted.small.text-uppercase.mb-2
 									span Value-shape filters
+									+countModeToggle()
 									span.ms-2.border-dotted(title="Counts of <em>active</em> names whose value carries each shape (valid JSON, .onion, TLSA records, IP addresses, Nostr identity, I2P address). Click any tile to see the matching names. Lists are sourced from the same 30-min background <code>name_scan</code> walk as the by-namespace breakdown above.", data-bs-toggle="tooltip", data-bs-html="true") (?)
+								+countModeNotes()
 								.row.row-cols-2.row-cols-md-3.row-cols-lg-6.g-2
 									- var __filtersValue = [{key:"json",label:"Valid JSON",title:"Names whose value parses as JSON."},{key:"cbor",label:"CBOR",title:"Names whose value is CBOR-encoded binary rather than JSON. Detected via the first byte of the value in hex form: a CBOR data item opens with a header byte whose high 3 bits are the major type (integer, string, array, map, tag, simple/float), and every major type is matched. Bytes with reserved additional-info values and the break code <code>0xFF</code> are excluded."},{key:"hex",label:"Hex",title:"Names whose value came back hex-encoded: the raw value carries non-printable bytes, so it is some kind of binary payload rather than plain text or JSON. Superset of the CBOR tile: a hex value can be CBOR, protobuf, a raw key, or any other binary format."},{key:"onion",label:".onion",title:"Names with a Tor v2/v3 onion address (<code>tor</code>/<code>_tor</code> field, or any <code>.onion</code> embedded in the value)."},{key:"onion-v2",label:"Onion v2",title:"Names with a Tor v2 onion address (16-character base32 <code>.onion</code> host)."},{key:"onion-v3",label:"Onion v3",title:"Names with a Tor v3 onion address (56-character base32 <code>.onion</code> host)."},{key:"tls",label:"TLSA",title:"Names that publish TLSA records (ifa-0001 §tls). Used for DANE TLS pinning, e.g. .bit relays."},{key:"sshfp",label:"SSHFP",title:"Names that publish SSHFP records (<code>sshfp</code> field: SSH host-key fingerprints, the SSH analog of TLSA). Used to pin SSH host keys via Namecoin instead of trust-on-first-use. JSON-key-only detection."},{key:"ip",label:"IP addresses",title:"Names that publish at least one IP address (any of: <code>ip</code>, <code>ip4</code>, <code>ip6</code>, or a literal address in any string)."},{key:"nostr",label:"Nostr",title:"Names that publish a Nostr identity (single <code>nostr.pubkey</code> or multi-identity <code>nostr.names</code> map)."},{key:"i2p",label:"I2P",title:"Names that publish an I2P address (<code>i2p</code> field or <code>.b32.i2p</code> host)."},{key:"zeronet",label:"ZeroNet",title:"Names that publish a ZeroNet site (<code>zeronet</code> field: single address string or subdomain map). ZeroNet resolves .bit sites via this field."},{key:"email",label:"Email",title:"Names with an <code>email</code> contact field (ifa-0001). A contact address, not an MX record."},{key:"freenet",label:"Freenet",title:"Names that publish a Freenet/Hyphanet key (<code>freenet</code> or <code>hyphanet</code> field, or a CHK/SSK/USK/KSK URI embedded in the value)."},{key:"btc",label:"Bitcoin",title:"Names that publish a Bitcoin address (legacy base58check or bech32/bech32m). Regex only, no checksum validation. Addresses found as values of a <code>zeronet</code> JSON key are excluded (ZeroNet site addresses are also base58 and would false-positive); a bare zeronet-looking address in plain text still matches."},{key:"xmr",label:"Monero",title:"Names that publish a Monero address (standard/integrated or subaddress). Regex only, no checksum validation."},{key:"nmc",label:"Namecoin",title:"Names that publish a Namecoin address (legacy P2PKH M/N prefix, or bech32 nc1). Regex only, no checksum validation. Bitmessage addresses (<code>BM-</code> + base58) are excluded; see the Bitmessage filter."},{key:"btc-d",label:"Bitcoin (d/)",title:"d/ names that publish a Bitcoin address (directly or via import). Namespace subset of the Bitcoin filter."},{key:"btc-dd",label:"Bitcoin (dd/)",title:"dd/ names that publish a Bitcoin address (directly or via import). Namespace subset of the Bitcoin filter."},{key:"btc-id",label:"Bitcoin (id/)",title:"id/ names that publish a Bitcoin address (directly or via import). Namespace subset of the Bitcoin filter."},{key:"btc-other",label:"Bitcoin (other)",title:"Names outside d/, dd/, and id/ that publish a Bitcoin address (directly or via import). Namespace subset of the Bitcoin filter."},{key:"nmc-d",label:"Namecoin (d/)",title:"d/ names that publish a Namecoin address (directly or via import). Namespace subset of the Namecoin filter."},{key:"nmc-dd",label:"Namecoin (dd/)",title:"dd/ names that publish a Namecoin address (directly or via import). Namespace subset of the Namecoin filter."},{key:"nmc-id",label:"Namecoin (id/)",title:"id/ names that publish a Namecoin address (directly or via import). Namespace subset of the Namecoin filter."},{key:"nmc-other",label:"Namecoin (other)",title:"Names outside d/, dd/, and id/ that publish a Namecoin address (directly or via import). Namespace subset of the Namecoin filter."},{key:"bitmessage",label:"Bitmessage",title:"Names that publish a Bitmessage address (<code>BM-</code> + base58 payload, or a <code>bitmessage</code> field). Old v2 Bitmessage payloads are base58 and can start with M/N, so they are excluded from the Namecoin filter and classified here."},{key:"bitmessage-d",label:"Bitmessage (d/)",title:"d/ names that publish a Bitmessage address (directly or via import). Namespace subset of the Bitmessage filter."},{key:"bitmessage-dd",label:"Bitmessage (dd/)",title:"dd/ names that publish a Bitmessage address (directly or via import). Namespace subset of the Bitmessage filter."},{key:"bitmessage-id",label:"Bitmessage (id/)",title:"id/ names that publish a Bitmessage address (directly or via import). Namespace subset of the Bitmessage filter."},{key:"bitmessage-other",label:"Bitmessage (other)",title:"Names outside d/, dd/, and id/ that publish a Bitmessage address (directly or via import). Namespace subset of the Bitmessage filter."},{key:"cjdns",label:"CJDNS",title:"Names that publish a cjdns IPv6 address (any IPv6 address starting with <code>fc</code>; fc00::/8 is reserved for private use and used by cjdns). Also counted under the generic IP filter. Regex only, no validation."}]
 									each __f in __filtersValue
@@ -116,14 +169,18 @@ else
 								.mt-3
 									div.text-muted.small.text-uppercase.mb-2
 										span Value-shape filters - all-time (as of block #{namesSummary.filterAllTimeHeight.toLocaleString()})
+										+countModeToggle()
 										span.ms-2.border-dotted(title="Counts of <em>all names in the chain database, active and expired</em>, whose value carries each shape. Refreshed every ~36,000 blocks (not every 30 min like the active tiles above) and rendered from an on-disk snapshot; the as-of block height is in the section header. Import references are resolved against current values only, so an expired name importing another expired name inherits no tags. Per-filter match lists are capped at 500 names. Tiles are not linked: the /names/filter pages list active names only.", data-bs-toggle="tooltip", data-bs-html="true") (?)
+									+countModeNotes()
 									.row.row-cols-2.row-cols-md-3.row-cols-lg-6.g-2
 										each __f in __filtersValue
 											+filterTileAllTime(__f)
 							.mt-4
 								div.text-muted.small.text-uppercase.mb-2
 									span DNS record filters
+									+countModeToggle()
 									span.ms-2.border-dotted(title="Counts of <em>active</em> names that publish each DNS record type via ifa-0001 §map fields. Click any tile to see matching names. <ul class='mb-0 mt-2 ps-3 small'><li><b>A</b> — IPv4 (<code>ip</code> field)</li><li><b>AAAA</b> — IPv6 (<code>ip6</code> field)</li><li><b>CNAME</b> — alias (<code>alias</code>/<code>translate</code>)</li><li><b>NS</b> — nameserver delegation (<code>ns</code>)</li><li><b>MX</b> — mail exchange (<code>email</code>/<code>mx</code>)</li><li><b>TXT</b> — text records (<code>txt</code>)</li><li><b>SRV</b> — service location (<code>service</code>)</li><li><b>SOA</b> — start of authority (<code>soa</code>)</li><li><b>DS</b> — DNSSEC delegation signer (<code>ds</code>)</li><li><b>DNSSEC</b> — cryptographic validation (<code>dnssec</code>, <code>rrsig</code>, <code>dnskey</code>, <code>nsec</code>, <code>nsec3</code>, <code>ds</code>)</li></ul>", data-bs-toggle="tooltip", data-bs-html="true") (?)
+								+countModeNotes()
 								.row.row-cols-2.row-cols-md-3.row-cols-lg-5.g-2
 									- var __filtersDns = [{key:"a",label:"A (IPv4)",title:"<b>A</b> — IPv4 address mapping. Names with <code>ip</code> field or any literal IPv4 in the value."},{key:"aaaa",label:"AAAA (IPv6)",title:"<b>AAAA</b> — IPv6 address mapping. Names with <code>ip6</code> field or any literal IPv6 in the value."},{key:"cname",label:"CNAME",title:"<b>CNAME</b> — Canonical name alias. Names with <code>alias</code> or <code>translate</code> field redirecting to another name."},{key:"ns",label:"NS",title:"<b>NS</b> — Nameserver delegation. Names with <code>ns</code> field delegating resolution authority."},{key:"mx",label:"MX",title:"<b>MX</b> — Mail exchange. Names with <code>email</code> shorthand or <code>mx</code> array."},{key:"txt",label:"TXT",title:"<b>TXT</b> — Text records. Names with <code>txt</code> field carrying arbitrary data (SPF, DKIM, verification, ad-hoc metadata)."},{key:"srv",label:"SRV",title:"<b>SRV</b> — Service location. Names with <code>service</code> field locating host:port for named services."},{key:"soa",label:"SOA",title:"<b>SOA</b> — Start of authority. Names with <code>soa</code> field declaring DNS zone authority."},{key:"ds",label:"DS",title:"<b>DS</b> — Delegation signer (DNSSEC). Names with <code>ds</code> field anchoring DNSSEC validation for a child zone."},{key:"dnssec",label:"DNSSEC",title:"<b>DNSSEC</b> — Cryptographic validation marker. Names with any of: <code>dnssec</code>, <code>rrsig</code>, <code>dnskey</code>, <code>nsec</code>, <code>nsec3</code>, or <code>ds</code> field."}]
 									each __f in __filtersDns
@@ -132,7 +189,9 @@ else
 								.mt-3
 									div.text-muted.small.text-uppercase.mb-2
 										span DNS record filters - all-time (as of block #{namesSummary.filterAllTimeHeight.toLocaleString()})
+										+countModeToggle()
 										span.ms-2.border-dotted(title="Counts of <em>all names in the chain database, active and expired</em>, that publish each DNS record type. Same all-time pass as the value-shape tiles above: refreshed every ~36,000 blocks, rendered from an on-disk snapshot, imports resolved against current values only, per-filter match lists capped at 500 names. Tiles are not linked: the /names/filter pages list active names only.", data-bs-toggle="tooltip", data-bs-html="true") (?)
+									+countModeNotes()
 									.row.row-cols-2.row-cols-md-3.row-cols-lg-5.g-2
 										each __f in __filtersDns
 											+filterTileAllTime(__f)

@@ -45,7 +45,7 @@ block content
 block endOfBody
 	script.
 		$(document).ready(function() {
-			$.get("./snippet/utxo-set", function(data) {
+			$.get("./snippet/utxo-set#{(typeof filterCountMode != 'undefined' && filterCountMode == 'txs') ? '?countMode=txs' : ''}", function(data) {
 				$("#utxo-set-content").html(data);
 
 				// enable tooltips everywhere

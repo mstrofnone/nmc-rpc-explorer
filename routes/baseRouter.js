@@ -2389,6 +2389,10 @@ router.get("/difficulty-history", function(req, res, next) {
 });
 
 router.get("/utxo-set", function(req, res, next) {
+	// nmc-3.6.59: the filter-tile count-mode toggle lives in the AJAX
+	// snippet; forward the query param so the shell page passes it through
+	// to /snippet/utxo-set (see views/utxo-set.pug).
+	res.locals.filterCountMode = (req.query.countMode == "txs") ? "txs" : "names";
 	res.render("utxo-set");
 
 	next();
