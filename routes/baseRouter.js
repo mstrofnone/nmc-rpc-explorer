@@ -2932,11 +2932,13 @@ router.get("/names/filter/:filter", asyncHandler(async (req, res, next) => {
 	res.locals.truncated = truncated;
 
 	// nmc-3.6.61: per-name tx counts for the rendered page of the match
-	// list. One batched countNameOpsForFilterPage call per request; only
-	// the rendered page slice is counted. The windowCoveragePct decoration
-	// mirrors the /utxo-set snippet route (3.6.59/3.6.60). The template
-	// falls back to the legacy flat grid whenever nameTxPage stays null
-	// (index disabled, still loading, or no matches).
+	// list. One batched countNameOpsForFilterPage call per request. Since
+	// nmc-3.6.62 there is no pagination: the single page covers the whole
+	// match list, so the one counting call covers every matched name (O(n)
+	// map lookups, no log scans). The windowCoveragePct decoration mirrors
+	// the /utxo-set snippet route (3.6.59/3.6.60). The template falls back
+	// to the legacy flat grid whenever nameTxPage stays null (index
+	// disabled, still loading, or no matches).
 	const nameTxIndex = require("./../app/api/nameTxIndex.js");
 	const txIdxStatus = nameTxIndex.indexStatus();
 	if (txIdxStatus.loaded && txIdxStatus.tipIndexed >= 0) {
@@ -2949,9 +2951,9 @@ router.get("/names/filter/:filter", asyncHandler(async (req, res, next) => {
 	res.locals.nameTxIndexStatus = txIdxStatus;
 	res.locals.nameTxPage = null;
 	if (txIdxStatus.enabled && txIdxStatus.loaded && matchedNames.length > 0) {
-		const limit = Math.min(500, Math.max(25, parseInt(req.query.limit || "200", 10) || 200));
-		const offset = Math.max(0, parseInt(req.query.offset || "0", 10) || 0);
-		res.locals.nameTxPage = nameTxIndex.countNameOpsForFilterPage(matchedNames, offset, limit);
+		// nmc-3.6.62: pagination removed at user request; one page renders
+		// the whole match list. limit/offset query params are ignored.
+		res.locals.nameTxPage = nameTxIndex.countNameOpsForFilterPage(matchedNames, 0, matchedNames.length);
 	}
 	res.render("names-filter");
 	next();
