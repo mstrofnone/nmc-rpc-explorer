@@ -229,6 +229,53 @@ block content
 			else
 				div.text-muted Empty value
 
+		if (importResolution && importResolution.effective != null)
+			+contentSection("Effective value (imports resolved)")
+				p.text-muted.small.mb-3.
+					This record pulls boilerplate from other Namecoin names via
+					<a href="https://github.com/namecoin/proposals/blob/master/ifa-0001.md#import" target="_blank" rel="noopener">ifa-0001 &sect;"import"</a>.
+					The merged view below is what resolvers such as
+					<code>ncdns</code> actually serve: each imported record
+					provides defaults and this name's own items override them
+					(including explicit <code>null</code>, which suppresses an
+					inherited item). The <code>import</code> key itself is
+					consumed by the merge and does not appear.
+				pre.bg-body-tertiary.p-3.rounded-1.small.mb-3.text-break(style="max-height: 32rem; overflow: auto;")
+					code= JSON.stringify(importResolution.effective, null, 2)
+
+				if (importResolution.imports && importResolution.imports.length)
+					div.text-muted.small.mb-2 Imported from
+					each imp in importResolution.imports
+						div.mb-2
+							a.font-monospace(href=utils.nameUrl(imp.name))= imp.name
+							if (imp.selector)
+								span.ms-2.small subdomain selector: #[code= imp.selector]
+							if (imp.status === "ok")
+								span.badge.bg-success.ms-2 merged
+							else
+								span.badge.bg-warning.text-dark.ms-2= imp.status
+							if (imp.warning)
+								div.text-warning.small= imp.warning
+							if (imp.contribution != null)
+								details.mt-1
+									summary.small.text-muted Contribution merged from this name
+									pre.bg-body-tertiary.p-2.rounded-1.small.mb-0.text-break(style="max-height: 16rem; overflow: auto;")
+										code= JSON.stringify(imp.contribution, null, 2)
+
+				if (importResolution.warnings && importResolution.warnings.length)
+					div.mt-3
+						div.text-muted.small.mb-1 Resolution warnings
+						ul.small.text-warning.mb-0
+							each w in importResolution.warnings
+								li= w
+
+				if (importResolution.mapLevelImports)
+					div.text-muted.small.mt-3.
+						Note: this value also carries <code>import</code> references
+						inside its <code>map</code> tree (listed in the Imports
+						section below); those apply to subdomains and are not
+						merged into the effective value above.
+
 		if (imports && imports.length)
 			+contentSection(`Imports (${imports.reduce((n, e) => n + e.imports.length, 0)})`)
 				p.text-muted.small.mb-3.
