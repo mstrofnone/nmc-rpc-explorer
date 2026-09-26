@@ -316,6 +316,63 @@ else
 															td.text-end= __row.total.toLocaleString()
 															td.d-none.d-md-table-cell.text-muted.small= __ns === "(none)" ? "" : (nameApi && nameApi.namespaceLabel ? (nameApi.namespaceLabel(__ns) || "") : "")
 
+						// nmc-3.6.60: "Most updated names" leaderboards, powered by the
+						// persistent name-tx index shipped in 3.6.59. Two top-10 boards
+						// directly beneath the by-namespace breakdown: the trailing
+						// 36,000-block window and all time. Both come from the index
+						// module's cached board snapshot (recomputed at most once a
+						// minute and only when the underlying aggregates changed),
+						// never recomputed per request from the raw op log. Ranked by
+						// operation count, ties broken by most-recent update height.
+						// The boards render from disk state even mid-backfill; while
+						// the indexed region is still partial an indexing-progress
+						// note marks the affected board.
+						mixin updatedNamesBoard(__rows)
+							.table-responsive
+								table.table.table-sm.table-borderless.mb-0.small
+									thead
+										tr
+											th.text-card-highlight.fw-light.text-uppercase Rank
+											th.text-card-highlight.fw-light.text-uppercase Name
+											th.text-end.text-card-highlight.fw-light.text-uppercase Updates
+											th.text-end.text-card-highlight.fw-light.text-uppercase.d-none.d-md-table-cell Last update
+									tbody
+										each __r, __i in __rows
+											tr
+												td.text-muted= "#" + (__i + 1)
+												td.font-monospace
+													a(href=utils.nameUrl(__r.name))= __r.name
+												td.text-end.fw-bold= __r.count.toLocaleString()
+												td.text-end.text-muted.d-none.d-md-table-cell
+													a.text-muted(href=`./block-height/${__r.lastHeight}`) #{__r.lastHeight.toLocaleString()}
+						mixin updatedNamesNote(__windowBoard)
+							if (!nameTxIndexStatus.loaded)
+								div.small.text-muted.mb-2 the name-tx index is still loading (replaying the op log); reload in a moment.
+							else if (__windowBoard && !nameTxIndexStatus.windowComplete)
+								div.small.text-muted.mb-2 indexing: #{nameTxIndexStatus.windowCoveragePct}% complete (through block #{nameTxIndexStatus.backfillDone.toLocaleString()}); entries below are partial.
+							else if (!__windowBoard && !nameTxIndexStatus.complete)
+								div.small.text-muted.mb-2 indexing: #{Math.round(100 * (nameTxIndexStatus.percent || 0))}% complete (through block #{(nameTxIndexStatus.backfillDone != null ? nameTxIndexStatus.backfillDone.toLocaleString() : "-")}); entries below are partial.
+
+						if (typeof nameTxIndexStatus != "undefined" && nameTxIndexStatus && nameTxIndexStatus.enabled)
+							.mt-4
+								div.text-muted.small.text-uppercase.mb-2
+									span Most updated (last 36,000 blocks)
+									span.ms-2.border-dotted(title="Top 10 names by name-operation count over the last 36,000 blocks (roughly 250 days at Namecoin's 10-minute target block time). Counts every <code>name_firstupdate</code> and <code>name_update</code> op; <code>name_new</code> ops carry no name and are unattributable. Ties are broken by most-recent update height. <br><br><b>Source:</b> the persistent name-tx index (3.6.59), which rebuilds every name operation from the blocks themselves into an append-only op log, independent of the 30-min <code>name_scan</code> walk that powers the sections above. The board is exact once the index has backfilled the full window; until then an indexing-progress note marks it as partial.", data-bs-toggle="tooltip", data-bs-html="true") (?)
+								+updatedNamesNote(true)
+								if (typeof nameTxBoards != "undefined" && nameTxBoards && nameTxBoards.window && nameTxBoards.window.length)
+									+updatedNamesBoard(nameTxBoards.window)
+								else if (nameTxIndexStatus.loaded)
+									div.small.text-muted No name updates indexed in this window yet.
+							.mt-4
+								div.text-muted.small.text-uppercase.mb-2
+									span Most updated (all time)
+									span.ms-2.border-dotted(title="Top 10 names by name-operation count across the whole chain, counting every <code>name_firstupdate</code> and <code>name_update</code> since genesis (expired names included; <code>name_new</code> ops carry no name and are unattributable). Ties are broken by most-recent update height. <br><br><b>Source:</b> the persistent name-tx index (3.6.59). Partial until the index backfill reaches block 0; an indexing-progress note shows while that is in progress.", data-bs-toggle="tooltip", data-bs-html="true") (?)
+								+updatedNamesNote(false)
+								if (typeof nameTxBoards != "undefined" && nameTxBoards && nameTxBoards.allTime && nameTxBoards.allTime.length)
+									+updatedNamesBoard(nameTxBoards.allTime)
+								else if (nameTxIndexStatus.loaded)
+									div.small.text-muted No name updates indexed yet.
+
 				if (utxoSetSummary.usingCoinStatsIndex)
 					span.small.text-muted Note: The above UTXO Set snapshot was produced using this node's <b>coin-stats index</b>; using this index affects which properties are available. Comparing the data above to a UTXO Set snapshot produced on a node without the coin-stats index enabled will look slightly different.
 

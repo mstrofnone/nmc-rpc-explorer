@@ -1,3 +1,29 @@
+##### nmc-3.6.60
+###### 2026-09-26
+
+**Add "Most updated names" leaderboards to /utxo-set, powered by the
+name-tx index shipped in 3.6.59.** A new section directly beneath the
+by-namespace breakdown shows two top-10 boards: Most updated (last
+36,000 blocks) and Most updated (all time). Each row links the name to
+its /name page, shows its name-operation count
+(name_firstupdate + name_update; name_new ops carry no name and are
+unattributable), and links the most-recent update height to its block.
+Ties are broken by most-recent update. Both boards come from the index
+module's cached board snapshot (recomputed at most once a minute and
+only when the underlying aggregates changed), never recomputed per
+request from the raw op log, and render from disk state even
+mid-backfill: while the indexed region is still partial, an
+"indexing: X% complete (through block Y)" note marks the affected
+board (window coverage for the 36k board, overall backfill progress
+for the all-time board). The window board is exact once the index has
+backfilled the last 36,000 blocks. The boards always count name
+operations, so they do not follow the filter tiles' names/txs toggle,
+and the section hides itself on instances running with
+BTCEXP_DISABLE_NAME_TX_INDEX=true. Also fixed: the cached window board
+now invalidates when a quiet stretch of op-less blocks slides the
+36,000-block window past previously ranked entries, instead of
+serving the stale board until the next name op arrived.
+
 ##### nmc-3.6.59
 ###### 2026-09-26
 
