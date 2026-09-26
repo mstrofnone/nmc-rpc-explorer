@@ -1,3 +1,16 @@
+##### nmc-3.6.63
+###### 2026-09-26
+
+**All-time filter tiles on /utxo-set are now click-through links (user
+request).** The Value-shape filters - all-time and DNS record filters -
+all-time sections link each tile to /names/filter/<key>?scope=alltime,
+the all-time filter page introduced in nmc-3.6.61 (active + expired
+match lists from the 3.6.58 all-time pass, capped at 500 names per
+filter with an on-page warning when capped, as-of block height shown,
+and a scope toggle back to active names). Section tooltips updated to
+describe the click-through; the active-scope tiles are unchanged. View
+layer only: no route, index, or scan changes.
+
 ##### nmc-3.6.62
 ###### 2026-09-26
 

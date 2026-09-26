@@ -137,7 +137,7 @@ else
 								- var __txa = (__txReady && filterTxCountsAllTime && filterTxCountsAllTime[__f.key] != null) ? filterTxCountsAllTime[__f.key] : null
 								- var __txCapped = (__txReady && filterTxCountsAllTime && filterTxCountsAllTime[__f.key] == null)
 								.col
-									.d-block.h-100.p-3.rounded-2.border.border-card-highlight.text-body(title=__f.title || "", data-bs-toggle=__f.title ? "tooltip" : null, data-bs-html="true")
+									a.text-decoration-none.d-block.h-100.p-3.rounded-2.border.border-card-highlight.text-body(href=`./names/filter/${__f.key}?scope=alltime`, title=__f.title || "", data-bs-toggle=__f.title ? "tooltip" : null, data-bs-html="true")
 										div.small.text-muted= __f.label
 										div.h5.fw-light.mb-0.mt-1
 											if (__txMode)
@@ -170,7 +170,7 @@ else
 									div.text-muted.small.text-uppercase.mb-2
 										span Value-shape filters - all-time (as of block #{namesSummary.filterAllTimeHeight.toLocaleString()})
 										+countModeToggle()
-										span.ms-2.border-dotted(title="Counts of <em>all names in the chain database, active and expired</em>, whose value carries each shape. Refreshed every ~36,000 blocks (not every 30 min like the active tiles above) and rendered from an on-disk snapshot; the as-of block height is in the section header. Import references are resolved against current values only, so an expired name importing another expired name inherits no tags. Per-filter match lists are capped at 500 names. Tiles are not linked: the /names/filter pages list active names only.", data-bs-toggle="tooltip", data-bs-html="true") (?)
+										span.ms-2.border-dotted(title="Counts of <em>all names in the chain database, active and expired</em>, whose value carries each shape. Refreshed every ~36,000 blocks (not every 30 min like the active tiles above) and rendered from an on-disk snapshot; the as-of block height is in the section header. Import references are resolved against current values only, so an expired name importing another expired name inherits no tags. Per-filter match lists are capped at 500 names. Click any tile to see the matching names (all-time scope, active + expired, as of the snapshot block).", data-bs-toggle="tooltip", data-bs-html="true") (?)
 									+countModeNotes()
 									.row.row-cols-2.row-cols-md-3.row-cols-lg-6.g-2
 										each __f in __filtersValue
@@ -190,7 +190,7 @@ else
 									div.text-muted.small.text-uppercase.mb-2
 										span DNS record filters - all-time (as of block #{namesSummary.filterAllTimeHeight.toLocaleString()})
 										+countModeToggle()
-										span.ms-2.border-dotted(title="Counts of <em>all names in the chain database, active and expired</em>, that publish each DNS record type. Same all-time pass as the value-shape tiles above: refreshed every ~36,000 blocks, rendered from an on-disk snapshot, imports resolved against current values only, per-filter match lists capped at 500 names. Tiles are not linked: the /names/filter pages list active names only.", data-bs-toggle="tooltip", data-bs-html="true") (?)
+										span.ms-2.border-dotted(title="Counts of <em>all names in the chain database, active and expired</em>, that publish each DNS record type. Same all-time pass as the value-shape tiles above: refreshed every ~36,000 blocks, rendered from an on-disk snapshot, imports resolved against current values only, per-filter match lists capped at 500 names. Click any tile to see the matching names (all-time scope).", data-bs-toggle="tooltip", data-bs-html="true") (?)
 									+countModeNotes()
 									.row.row-cols-2.row-cols-md-3.row-cols-lg-5.g-2
 										each __f in __filtersDns
