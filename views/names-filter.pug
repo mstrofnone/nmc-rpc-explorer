@@ -29,10 +29,6 @@ block content
 	//- locals), so the matches header is byte-identical to pre-3.6.61 there.
 	- var __scopeAllTime = (typeof filterScope != "undefined" && filterScope == "alltime")
 	+contentSection(`${matchedCount.toLocaleString()} match${matchedCount === 1 ? "" : "es"}${__scopeAllTime ? " (all time, active + expired)" : ""}`)
-		if (truncated)
-			.alert.alert-warning.small.mb-3
-				div The cached match list is capped at #{matchedNames.length.toLocaleString()} names; the actual count is #{matchedCount.toLocaleString()}. Click through to individual names below to inspect their values, or use <code>/api/names</code> to enumerate the full set programmatically.
-
 		//- nmc-3.6.61: active vs all-time (active + expired) scope toggle,
 		//- shown once the 3.6.58 all-time pass has produced match lists.
 		if (typeof filterScope != "undefined" && filterAllTimeReady)

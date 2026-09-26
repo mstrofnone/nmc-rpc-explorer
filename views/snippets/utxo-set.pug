@@ -170,7 +170,7 @@ else
 									div.text-muted.small.text-uppercase.mb-2
 										span Value-shape filters - all-time (as of block #{namesSummary.filterAllTimeHeight.toLocaleString()})
 										+countModeToggle()
-										span.ms-2.border-dotted(title="Counts of <em>all names in the chain database, active and expired</em>, whose value carries each shape. Refreshed every ~36,000 blocks (not every 30 min like the active tiles above) and rendered from an on-disk snapshot; the as-of block height is in the section header. Import references are resolved against current values only, so an expired name importing another expired name inherits no tags. Per-filter match lists are capped at 500 names. Click any tile to see the matching names (all-time scope, active + expired, as of the snapshot block).", data-bs-toggle="tooltip", data-bs-html="true") (?)
+										span.ms-2.border-dotted(title="Counts of <em>all names in the chain database, active and expired</em>, whose value carries each shape. Refreshed every ~36,000 blocks (not every 30 min like the active tiles above) and rendered from an on-disk snapshot; the as-of block height is in the section header. Import references are resolved against current values only, so an expired name importing another expired name inherits no tags. Per-filter match lists are complete, never capped. Click any tile to see the matching names (all-time scope, active + expired, as of the snapshot block).", data-bs-toggle="tooltip", data-bs-html="true") (?)
 									+countModeNotes()
 									.row.row-cols-2.row-cols-md-3.row-cols-lg-6.g-2
 										each __f in __filtersValue
@@ -190,7 +190,7 @@ else
 									div.text-muted.small.text-uppercase.mb-2
 										span DNS record filters - all-time (as of block #{namesSummary.filterAllTimeHeight.toLocaleString()})
 										+countModeToggle()
-										span.ms-2.border-dotted(title="Counts of <em>all names in the chain database, active and expired</em>, that publish each DNS record type. Same all-time pass as the value-shape tiles above: refreshed every ~36,000 blocks, rendered from an on-disk snapshot, imports resolved against current values only, per-filter match lists capped at 500 names. Click any tile to see the matching names (all-time scope).", data-bs-toggle="tooltip", data-bs-html="true") (?)
+										span.ms-2.border-dotted(title="Counts of <em>all names in the chain database, active and expired</em>, that publish each DNS record type. Same all-time pass as the value-shape tiles above: refreshed every ~36,000 blocks, rendered from an on-disk snapshot, imports resolved against current values only, per-filter match lists complete, never capped. Click any tile to see the matching names (all-time scope).", data-bs-toggle="tooltip", data-bs-html="true") (?)
 									+countModeNotes()
 									.row.row-cols-2.row-cols-md-3.row-cols-lg-5.g-2
 										each __f in __filtersDns
