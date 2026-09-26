@@ -1,0 +1,48 @@
+//- nmc-3.6.61: per-name transaction counts on /names/filter/<key> pages.
+//- Included by names-filter.pug only when nameTxPage is present: one
+//- rendered page of the match list plus its batched per-name counts from
+//- the persistent name-tx index (3.6.59). "txs (36k)" counts
+//- name_firstupdate + name_update ops involving the name over the trailing
+//- 36,000 blocks; "txs (all time)" counts them over the whole indexed
+//- region and is exact only once the index backfill completes. While the
+//- indexed region is partial an indexing-progress note marks the affected
+//- column, in the same style as the 3.6.60 most-updated boards. Names
+//- with zero indexed ops in a scope show a plain 0, matching how the
+//- filter tiles render a true zero count. Pagination walks limit/offset
+//- and preserves the active/all-time scope; the counting only ever
+//- touches the rendered page (see countNameOpsForFilterPage).
+if (!nameTxIndexStatus || !nameTxIndexStatus.loaded)
+	div.small.text-muted.mb-2 the name-tx index is still loading (replaying the op log); reload in a moment.
+else
+	if (!nameTxIndexStatus.windowComplete)
+		div.small.text-muted.mb-2 indexing: #{nameTxIndexStatus.windowCoveragePct}% complete (through block #{(nameTxIndexStatus.backfillDone != null ? nameTxIndexStatus.backfillDone.toLocaleString() : "-")}); txs (36k) counts below are partial.
+	if (!nameTxIndexStatus.complete)
+		div.small.text-muted.mb-2 indexing: #{Math.round(100 * (nameTxIndexStatus.percent || 0))}% complete (through block #{(nameTxIndexStatus.backfillDone != null ? nameTxIndexStatus.backfillDone.toLocaleString() : "-")}); txs (all time) counts below are partial.
+if (nameTxPage.total > nameTxPage.pageNames.length)
+	div.small.text-muted.mb-2 showing #{nameTxPage.offset + 1} to #{nameTxPage.end} of #{nameTxPage.total.toLocaleString()}
+.table-responsive
+	table.table.table-sm.table-borderless.mb-0.small
+		thead
+			tr
+				th.text-card-highlight.fw-light.text-uppercase Name
+				th.text-end.text-card-highlight.fw-light.text-uppercase(title="name_firstupdate + name_update operations involving this name over the trailing 36,000 blocks, from the persistent name-tx index; exact once the index has backfilled the full window", data-bs-toggle="tooltip", data-bs-html="true") txs (36k)
+				th.text-end.text-card-highlight.fw-light.text-uppercase(title="name_firstupdate + name_update operations involving this name across the whole chain, from the persistent name-tx index; exact once the index backfill completes", data-bs-toggle="tooltip", data-bs-html="true") txs (all time)
+		tbody
+			each __n in nameTxPage.pageNames
+				tr
+					td.font-monospace
+						a(href=utils.nameUrl(__n))= __n
+					td.text-end.fw-bold= (nameTxPage.window[__n] || 0).toLocaleString()
+					td.text-end.text-muted= (nameTxPage.allTime[__n] || 0).toLocaleString()
+if (nameTxPage.pageCount > 1)
+	- var __pagerBase = `./names/filter/${filter}?limit=${nameTxPage.limit}` + ((typeof filterScope != "undefined" && filterScope == "alltime") ? "&scope=alltime" : "")
+	nav.mt-3(aria-label="Page navigation")
+		ul.pagination.flex-wrap.mb-0
+			li.page-item(class=(nameTxPage.page == 1 ? "disabled" : false))
+				a.page-link(href=(nameTxPage.page == 1 ? "javascript:void(0)" : `${__pagerBase}&offset=${nameTxPage.offset - nameTxPage.limit}`), aria-label="Previous")
+					span(aria-hidden="true") &laquo;
+			li.page-item.disabled
+				span.page-link Page #{nameTxPage.page} / #{nameTxPage.pageCount.toLocaleString()}
+			li.page-item(class=(nameTxPage.page == nameTxPage.pageCount ? "disabled" : false))
+				a.page-link(href=(nameTxPage.page == nameTxPage.pageCount ? "javascript:void(0)" : `${__pagerBase}&offset=${nameTxPage.offset + nameTxPage.limit}`), aria-label="Next")
+					span(aria-hidden="true") &raquo;

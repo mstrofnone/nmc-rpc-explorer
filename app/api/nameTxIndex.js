@@ -7,8 +7,13 @@
 // names-vs-transactions count-mode toggle on the /utxo-set value-shape
 // and DNS record filter tiles (nmc-3.6.59). The "Most updated names"
 // leaderboards (last-36,000-blocks and all-time) are a SEPARATE later
-// release (3.6.60): mostUpdatedNames/getBoards are exported and tested
-// here but deliberately have no UI yet.
+// release (3.6.60): mostUpdatedNames/getBoards power the boards beneath
+// the by-namespace breakdown on /utxo-set. A THIRD consumer landed in
+// nmc-3.6.61: countNameOpsByNames returns per-name op counts in both
+// scopes (trailing window + all time over the indexed region) for the
+// /names/filter/<key> click-through pages, and the module-level
+// countNameOpsForFilterPage slices one rendered page of a match list and
+// counts exactly that page in a single batched call (never per-row).
 //
 // What gets indexed: namecoind surfaces name ops on
 // `vout[].scriptPubKey.nameOp` with op one of:
@@ -549,6 +554,28 @@ function createNameTxIndex(options = {}) {
 		return sum;
 	}
 
+	// Per-name op counts for a set of names, in both scopes the
+	// /names/filter/<key> pages display (nmc-3.6.61): the trailing window
+	// (exact for the retained window) and all time (exact over the indexed
+	// region [backfillDone .. tipIndexed]; partial until the backfill
+	// completes). Every requested name appears in both maps, zero counts
+	// included, so callers can render one row per name without existence
+	// checks. name_new ops carry no name and are never counted here.
+	function countNameOpsByNames(nameSet) {
+		const window = {};
+		const allTime = {};
+		if (!nameSet) return { window, allTime };
+		for (const name of nameSet) {
+			let w = 0;
+			const rec = windowByName.get(name);
+			if (rec) w = rec.heights.length;
+			window[name] = w;
+			const packed = allTimeByName.get(name) || 0;
+			allTime[name] = unpackTotal(packed);
+		}
+		return { window, allTime };
+	}
+
 	// Per-filter-key tx counts for the /utxo-set count-mode toggle.
 	// `filterLists` is the summary's { key: [name, ...] } map; returns
 	// { key: txCount }. Pure and injectable-friendly (takes the lists in).
@@ -635,6 +662,7 @@ function createNameTxIndex(options = {}) {
 		indexFetchedBlock,   // exposed for tests (feed a block directly)
 		countNameOpsSince,
 		countNameOpsByNamesSince,
+		countNameOpsByNames,
 		countTxsForFilters,
 		mostUpdatedNames,
 		getBoards,
@@ -676,6 +704,35 @@ const EMPTY_STATUS = {
 	percent: 0, boardsComputedAt: 0, lastError: null, updatedAt: null,
 };
 
+// nmc-3.6.61: one rendered page of a /names/filter/<key> match list plus
+// the per-name tx counts for exactly that page, in a single batched count
+// (never per-row queries, never raw log scans). offset is clamped into
+// range and aligned down to a whole page; the returned page/pageCount are
+// 1-based/total for the pager. Only the rendered page slice is passed to
+// the counter: pagination never pays for names it does not display.
+function countNameOpsForFilterPage(names, offset, limit) {
+	const list = Array.isArray(names) ? names : [];
+	const total = list.length;
+	const lim = Math.max(1, limit | 0);
+	const pageCount = Math.max(1, Math.ceil(total / lim));
+	let off = Math.max(0, offset | 0);
+	if (off >= total) off = (pageCount - 1) * lim;
+	off = Math.floor(off / lim) * lim;
+	const pageNames = list.slice(off, off + lim);
+	const counts = module.exports.countNameOpsByNames(pageNames);
+	return {
+		pageNames,
+		offset: off,
+		limit: lim,
+		total,
+		pageCount,
+		page: Math.floor(off / lim) + 1,
+		end: off + pageNames.length,
+		window: counts.window,
+		allTime: counts.allTime,
+	};
+}
+
 module.exports = {
 	createNameTxIndex,
 	startShared,
@@ -686,6 +743,8 @@ module.exports = {
 	indexStatus: () => (shared ? shared.indexStatus() : Object.assign({}, EMPTY_STATUS)),
 	countNameOpsSince: (h) => (shared ? shared.countNameOpsSince(h) : 0),
 	countNameOpsByNamesSince: (s, h) => (shared ? shared.countNameOpsByNamesSince(s, h) : 0),
+	countNameOpsByNames: (s) => (shared ? shared.countNameOpsByNames(s) : { window: {}, allTime: {} }),
+	countNameOpsForFilterPage,
 	countTxsForFilters: (lists, h) => (shared ? shared.countTxsForFilters(lists, h) : {}),
 	mostUpdatedNames: (o) => (shared ? shared.mostUpdatedNames(o) : []),
 	getBoards: (o) => (shared ? shared.getBoards(o) : { window: [], allTime: [] }),

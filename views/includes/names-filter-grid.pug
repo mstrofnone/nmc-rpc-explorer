@@ -1,0 +1,9 @@
+//- nmc-3.6.61: legacy flat link grid for /names/filter/<key>, moved here
+//- verbatim from names-filter.pug. Rendered whenever the name-tx index
+//- cannot supply per-name counts (index disabled, still loading, or a
+//- render without the new locals): the page then looks exactly as it did
+//- before 3.6.61. The tx-counts table lives in names-filter-txs.pug.
+.row.row-cols-1.row-cols-md-2.row-cols-lg-3.g-2
+	each name in matchedNames
+		.col
+			a.font-monospace.small.text-decoration-none.d-block.text-truncate(href=utils.nameUrl(name), title=name)= name
