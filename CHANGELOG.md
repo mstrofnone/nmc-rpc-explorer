@@ -1,3 +1,25 @@
+##### nmc-3.6.58
+###### 2026-09-26
+
+**Add all-time counterparts of the /utxo-set value-shape and DNS record
+filters.** The existing filter tiles count active names only, refreshed
+every 30 min. Each section now has an all-time twin beneath it: the same
+classifiers counted over every name in the chain database, active and
+expired, labeled with the as-of block height. The all-time pass runs
+inside the regular name_scan background walk but is block-height-
+triggered, firing only when the tip has advanced 36,000 blocks since
+the last run (or when no run has ever completed), and its results
+persist to a JSON snapshot in the filesystem cache dir
+(cache/names-filter-alltime.json) so restarts render from disk instead
+of rescanning. Import references for expired names resolve against
+current values only, so an expired name importing another expired name
+inherits no tags. Counts are exact; per-filter match lists are capped
+at 500 names and are not linked from the tiles (the /names/filter/<key>
+pages remain active-only). Operators can tune the cadence with
+BTCEXP_NAMES_ALLTIME_FILTER_BLOCKS.
+
+---
+
 ##### nmc-3.6.57
 ###### 2026-09-26
 

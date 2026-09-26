@@ -20,6 +20,8 @@
 
 const rpcApi = require("./rpcApi.js");
 const { bech32 } = require("bech32");
+const config = require("../config.js");
+const utils = require("../utils.js");
 
 // namecoind error codes we treat as authoritative "this name has no live
 // record" answers.  -4 covers both "name expired" and "name never
@@ -1345,6 +1347,34 @@ const FILTER_DESCRIPTIONS = {
 };
 
 // ---------------------------------------------------------------------------
+// All-time filter snapshot.
+//
+// The /utxo-set value-shape and DNS record filter tiles count ACTIVE names
+// only, refreshed every 30 min by the getNamesSummary walk below. Their
+// all-time counterparts (active + expired) are recomputed on a much slower
+// cadence - once every ALLTIME_FILTER_MIN_BLOCKS blocks - during the same
+// walk, and persisted to a JSON snapshot in the explorer filesystem cache
+// dir so a restart renders instantly from disk instead of rescanning.
+// The in-memory copy mirrors the snapshot file; loadAllTimeFilterSnapshot
+// lazy-loads it on first use.
+// ---------------------------------------------------------------------------
+const ALLTIME_FILTER_MIN_BLOCKS = 36000;
+const ALLTIME_FILTER_LIST_CAP = 500;
+const allTimeFilterFileCache = utils.fileCache(config.filesystemCacheDir, "names-filter-alltime");
+let allTimeFilterSnapshot = null;
+let allTimeFilterSnapshotLoaded = false;
+
+function loadAllTimeFilterSnapshot() {
+	if (allTimeFilterSnapshotLoaded) return allTimeFilterSnapshot;
+	allTimeFilterSnapshotLoaded = true;
+	const snap = allTimeFilterFileCache.tryLoadJson();
+	if (snap && typeof snap === "object" && typeof snap.height === "number" && snap.counts && typeof snap.counts === "object") {
+		allTimeFilterSnapshot = snap;
+	}
+	return allTimeFilterSnapshot;
+}
+
+// ---------------------------------------------------------------------------
 // Names summary scanner.
 //
 // `gettxoutsetinfo.amount.names` reports total NMC LOCKED in name outputs.
@@ -1368,9 +1398,13 @@ const FILTER_DESCRIPTIONS = {
 //     scannedAt:  <ms epoch>,
 //     truncated:  <bool>,           // hit the per-prefix cap
 //     elapsedMs:  <int>,
+//     filterCountsAllTime: { <filterKey>: <int> } | null,   // active + expired counts
+//     filterListsAllTime:  { <filterKey>: [name, ...] } | null,   // capped at filterAllTimeListCap
+//     filterAllTimeHeight: <int> | null,   // chain tip the all-time pass last ran at
+//     filterAllTimeRefreshed: <bool>,      // true when THIS run executed the all-time pass
 //   }
 // ---------------------------------------------------------------------------
-async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefixes = null, filterListCap = Infinity, squatterTopN = 10, squatterSampleNames = 5, squatterMinCount = 2, squatterMaxValueLen = 4096, expiringSoonBlocks = 2016, recentlyExpiredBlocks = 2016, expiringListCap = 500 } = {}) {
+async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefixes = null, filterListCap = Infinity, squatterTopN = 10, squatterSampleNames = 5, squatterMinCount = 2, squatterMaxValueLen = 4096, expiringSoonBlocks = 2016, recentlyExpiredBlocks = 2016, expiringListCap = 500, tipHeight = null, allTimeMinBlocks = ALLTIME_FILTER_MIN_BLOCKS, allTimeListCap = ALLTIME_FILTER_LIST_CAP } = {}) {
 	const startedAt = Date.now();
 	// Squatter clustering: group names by their EXACT value string. Names
 	// registered in bulk by the same operator (typo-squat farms, parking
@@ -1408,6 +1442,18 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 		filterCounts: Object.fromEntries(FILTER_KEYS.map(k => [k, 0])),
 		filterLists: Object.fromEntries(FILTER_KEYS.map(k => [k, []])),
 		filterListCap,
+		// All-time (active + expired) filter counterparts. Filled in at the
+		// end of the scan: freshly recomputed when the block-height cadence
+		// fired this run, otherwise carried forward from the on-disk
+		// snapshot. Null until the first all-time pass has ever completed.
+		filterCountsAllTime: null,
+		filterListsAllTime: null,
+		filterAllTimeHeight: null,
+		filterAllTimeTotal: null,
+		filterAllTimeScannedAt: null,
+		filterAllTimeListCap: allTimeListCap,
+		filterAllTimeRefreshed: false,
+		filterAllTimeElapsedMs: null,
 		// Top-N squatter clusters by active count and by total (active+expired) count.
 		// Filled in at the end of the scan.
 		squattersCurrent: [],
@@ -1436,6 +1482,22 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 		pagesScanned: 0,
 		elapsedMs: 0,
 	};
+
+	// All-time pass gate: block-height-triggered, not time-triggered. When
+	// the chain tip has advanced at least allTimeMinBlocks since the last
+	// all-time run (or no all-time run has ever completed), this walk also
+	// classifies EXPIRED names into a parallel index and the all-time
+	// counts are recomputed at the end of the scan. On every other run the
+	// summary just carries the previous snapshot forward, so the 30-min
+	// walk pays no extra classifier cost.
+	const priorAllTimeSnapshot = loadAllTimeFilterSnapshot();
+	const collectAllTime = Number.isFinite(tipHeight)
+		&& (!priorAllTimeSnapshot || (tipHeight - priorAllTimeSnapshot.height) >= allTimeMinBlocks);
+	const filterNameIndexExpired = collectAllTime ? new Map() : null;
+	// Set when a name_scan page fails terminally mid-walk: a partial walk
+	// must not poison the all-time snapshot (it persists for ~36k blocks),
+	// so the all-time pass is skipped on aborted scans.
+	let scanAborted = false;
 
 	// Default scan list. "" means "no prefix filter" — covers every namespace,
 	// including ones we haven't enumerated explicitly. The cap is huge by
@@ -1475,6 +1537,7 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 				try {
 					rows = await rpcApi.getRpcDataWithParams({ method: "name_scan", parameters: legacyParams });
 				} catch (_e2) {
+					scanAborted = true;
 					break;
 				}
 			}
@@ -1550,13 +1613,15 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 					}
 				}
 
-				// Value-shape classification — only run on active names so the
-				// filter counts reflect what's currently *resolvable*. Expired
-				// names are still in the index but have no operational meaning.
+				// Value-shape classification. Active names are always classified
+				// so the filter counts reflect what's currently *resolvable*.
+				// Expired names are classified only when the all-time pass is due
+				// this run (filterNameIndexExpired non-null); they then feed the
+				// all-time (active + expired) filter counts.
 				// Counting is deferred until after the walk: a name that carries
 				// only an `import` reference must inherit the imported value's
 				// tags, which needs the whole-chain index built here.
-				if (!row.expired) {
+				if (!row.expired || filterNameIndexExpired) {
 					let parsed = null;
 					if (typeof row.value === "string") {
 						const trimmed = row.value.trim();
@@ -1576,7 +1641,8 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 							}
 						}
 					}
-					filterNameIndex.set(row.name, { tags: ownTags, imports: importNames });
+					if (!row.expired) filterNameIndex.set(row.name, { tags: ownTags, imports: importNames });
+					else filterNameIndexExpired.set(row.name, { tags: ownTags, imports: importNames });
 				}
 			}
 
@@ -1648,17 +1714,16 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 		filterTagMemo.set(name, arr);
 		return arr;
 	}
-	for (const [name, rec] of filterNameIndex.entries()) {
-		// Copy the resolved tags: resolveFilterTags returns the memoized
-		// array, and the namespace split below must never leak into it (an
-		// importer of this name would otherwise inherit its namespace tag).
-		const resolved = rec.imports ? resolveFilterTags(name, 0) : rec.tags;
-		const finalTags = resolved ? [...resolved] : [];
-		// Namespace split for the coin-address filters: btc / nmc /
-		// bitmessage also tag <filter>-<ns> using the listed name's own
-		// namespace. An importer of a name carrying an address is counted
-		// under the importer's namespace, matching how the combined filters
-		// list it.
+	// Shared counting path for the active and all-time filter passes, so
+	// the two can never drift apart: applies the namespace split for the
+	// coin-address filters (btc / nmc / bitmessage also tag <filter>-<ns>
+	// using the listed name's own namespace; an importer of a name
+	// carrying an address is counted under the importer's namespace,
+	// matching how the combined filters list it), then counts the name
+	// under every final tag. NOTE: finalTags is mutated in place
+	// (namespace tags appended); callers must pass a private copy, never
+	// the memoized resolveFilterTags array.
+	function tallyFilterName(name, finalTags, counts, lists, listCap) {
 		if (finalTags.includes("btc") || finalTags.includes("nmc") || finalTags.includes("bitmessage")) {
 			const ns = _filterNamespace(name);
 			if (finalTags.includes("btc")) finalTags.push(`btc-${ns}`);
@@ -1666,16 +1731,87 @@ async function getNamesSummary({ pageSize = 2000, perPrefixCap = 10000000, prefi
 			if (finalTags.includes("bitmessage")) finalTags.push(`bitmessage-${ns}`);
 		}
 		for (const tag of finalTags) {
-			summary.filterCounts[tag]++;
-			// Filter lists are uncapped: every list is bounded by the
-			// active-name count and stores references to name strings that
-			// already live in filterNameIndex, so the extra memory is just
-			// array slots (a few MB worst case) and filter pages can always
-			// render the complete match list.
-			if (summary.filterLists[tag].length < filterListCap) {
-				summary.filterLists[tag].push(name);
+			counts[tag]++;
+			if (lists[tag].length < listCap) {
+				lists[tag].push(name);
 			}
 		}
+	}
+	for (const [name, rec] of filterNameIndex.entries()) {
+		// Copy the resolved tags: resolveFilterTags returns the memoized
+		// array, and the namespace split below must never leak into it (an
+		// importer of this name would otherwise inherit its namespace tag).
+		const resolved = rec.imports ? resolveFilterTags(name, 0) : rec.tags;
+		const finalTags = resolved ? [...resolved] : [];
+		// Active filter lists are uncapped: every list is bounded by the
+		// active-name count and stores references to name strings that
+		// already live in filterNameIndex, so the extra memory is just
+		// array slots (a few MB worst case) and filter pages can always
+		// render the complete match list.
+		tallyFilterName(name, finalTags, summary.filterCounts, summary.filterLists, filterListCap);
+	}
+
+	// All-time filter pass (active + expired). Reuses the exact same
+	// classifier output and counting path as the active pass above so the
+	// two can never drift apart. Caveat: import resolution for an EXPIRED
+	// name resolves against current (active) values only -
+	// resolveFilterTags looks imports up in the active-only index, so an
+	// expired name that imports another expired name inherits no tags.
+	// Counts are exact; per-filter match lists are capped at
+	// allTimeListCap because expired-name volume is large.
+	if (filterNameIndexExpired && !scanAborted) {
+		const allTimeStartedAt = Date.now();
+		const atCounts = Object.fromEntries(FILTER_KEYS.map(k => [k, 0]));
+		const atLists = Object.fromEntries(FILTER_KEYS.map(k => [k, []]));
+		for (const [name, rec] of filterNameIndex.entries()) {
+			const resolved = rec.imports ? resolveFilterTags(name, 0) : rec.tags;
+			tallyFilterName(name, resolved ? [...resolved] : [], atCounts, atLists, allTimeListCap);
+		}
+		for (const [name, rec] of filterNameIndexExpired.entries()) {
+			let baseTags;
+			if (rec.imports) {
+				const out = new Set(rec.tags);
+				for (const impName of rec.imports) {
+					const inherited = resolveFilterTags(impName, 0);
+					if (inherited) for (const t of inherited) out.add(t);
+				}
+				baseTags = [...out];
+			} else {
+				baseTags = [...rec.tags];
+			}
+			tallyFilterName(name, baseTags, atCounts, atLists, allTimeListCap);
+		}
+		const snap = {
+			version: 1,
+			height: tipHeight,
+			scannedAt: Date.now(),
+			elapsedMs: Date.now() - allTimeStartedAt,
+			listCap: allTimeListCap,
+			total: summary.total,
+			active: summary.active,
+			expired: summary.expired,
+			counts: atCounts,
+			lists: atLists,
+		};
+		try {
+			allTimeFilterFileCache.writeJson(snap);
+		} catch { /* the in-memory copy below still takes effect */ }
+		allTimeFilterSnapshot = snap;
+		allTimeFilterSnapshotLoaded = true;
+		summary.filterAllTimeRefreshed = true;
+		summary.filterAllTimeElapsedMs = snap.elapsedMs;
+	}
+
+	// Carry the all-time snapshot (freshly recomputed or previous) onto
+	// the summary so /utxo-set can render the all-time tiles with their
+	// as-of height.
+	if (allTimeFilterSnapshot && allTimeFilterSnapshot.counts) {
+		summary.filterCountsAllTime = allTimeFilterSnapshot.counts;
+		summary.filterListsAllTime = allTimeFilterSnapshot.lists || null;
+		summary.filterAllTimeHeight = allTimeFilterSnapshot.height;
+		summary.filterAllTimeTotal = allTimeFilterSnapshot.total != null ? allTimeFilterSnapshot.total : null;
+		summary.filterAllTimeScannedAt = allTimeFilterSnapshot.scannedAt || null;
+		if (allTimeFilterSnapshot.listCap != null) summary.filterAllTimeListCap = allTimeFilterSnapshot.listCap;
 	}
 
 	// Rank clusters into top-N for both "current" (active only) and
@@ -2621,6 +2757,7 @@ module.exports = {
 	parseNameIdFields,
 	nip05ForLocalPart,
 	getNamesSummary,
+	getAllTimeFilterSnapshot: loadAllTimeFilterSnapshot,
 	classifyNameValue,
 	filterNamespace: _filterNamespace,
 	ONION_V2_RE,
