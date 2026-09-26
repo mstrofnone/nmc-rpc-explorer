@@ -1,3 +1,17 @@
+##### nmc-3.6.62
+###### 2026-09-26
+
+**Remove pagination from the /names/filter/<key> click-through pages
+(user request).** Each filter page now renders its entire match list on
+a single page: for the largest current filter (json) that is ~110k rows
+with both per-name tx columns (3.6.61). The one batched index counting
+call per request now covers every matched name; this stays cheap
+because per-name counts are O(n) map lookups in the name-tx index, never
+log scans. The limit/offset query params are ignored, and the pager plus
+the "showing X to Y of Z" line are gone from the tx-counts table. The
+legacy flat grid fallback (index loading or disabled) already rendered
+the full list unpaginated, so both render paths now agree.
+
 ##### nmc-3.6.61
 ###### 2026-09-26
 
