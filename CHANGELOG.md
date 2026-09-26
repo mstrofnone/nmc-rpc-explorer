@@ -1,3 +1,28 @@
+##### nmc-3.6.57
+###### 2026-09-26
+
+**Show resolved import values on /name/<name> pages.** When a name's
+JSON value carries a root-level ifa-0001 `import` reference, the name
+page now renders a new "Effective value (imports resolved)" section:
+the fully merged record that resolvers such as ncdns actually serve,
+with each imported record providing defaults and the name's own items
+overriding them (including explicit nulls, which suppress inherited
+items). Beneath it, an "Imported from" list links every imported
+name, shows its subdomain selector if any, discloses its merged
+contribution under a collapsible details block, and badges per-import
+failures (missing, expired, unreadable, cycle, depth-cap,
+selector-miss) instead of letting them break the page. Resolution is
+a recursive name_show walk (memoized, cycle-guarded, depth-capped at
+16, same as the filter-tag resolver in the names summary), merges
+objects key-by-key while scalars and arrays override wholesale,
+processes a target's own imports before applying a selector, and
+never emits the consumed `import` key in the result. Map-level
+imports (applying to subdomains) are detected and noted but not
+merged, matching resolver behavior at the root level. The raw value
+display and the existing Imports reference section are unchanged.
+
+---
+
 ##### nmc-3.6.56
 ###### 2026-09-26
 

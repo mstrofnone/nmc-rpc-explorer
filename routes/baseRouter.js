@@ -2996,6 +2996,34 @@ router.get(/^\/name\/(.+)$/, asyncHandler(async (req, res, next) => {
 			res.locals.idFields = [];
 		}
 
+		// Resolve ROOT-LEVEL ifa-0001 imports into the effective value a
+		// resolver (ncdns et al.) would actually serve: imported records
+		// provide defaults, this name's own items override. Only computed
+		// when a root-level `import` exists; map-level imports are detected
+		// by collectAllImports above and merely noted by the view. One
+		// name_show per imported name (memoized within the request), all
+		// failures degrade to disclosed warnings rather than page errors.
+		res.locals.importResolution = null;
+		if (res.locals.valueRender.kind === "json" && res.locals.valueRender.parsed) {
+			const rootImports = nameApi.parseImports(res.locals.valueRender.parsed);
+			if (rootImports.imports.length) {
+				try {
+					res.locals.importResolution = await nameApi.resolveNameImports(
+						res.locals.valueRender.parsed,
+						{ name: rawName }
+					);
+				} catch (e) {
+					res.locals.importResolution = {
+						effective: null,
+						imports: [],
+						warnings: [`import resolution failed: ${e.message || e}`],
+						malformed: false,
+						mapLevelImports: false,
+					};
+				}
+			}
+		}
+
 		// Pending mempool ops referencing THIS name (best-effort; harmless if
 		// `name_pending` rejects the per-name argument on older nodes).
 		try {

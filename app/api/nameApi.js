@@ -454,6 +454,240 @@ function collectAllImports(parsedValue, _depth = 0) {
 }
 
 // ---------------------------------------------------------------------------
+// ifa-0001 §"import" — full import RESOLUTION.
+//
+// Where parseImports/collectAllImports only *detect* references,
+// resolveNameImports actually walks them: it name_show's each imported name
+// (recursively), merges the records per the spec, and returns the effective
+// value a resolver like ncdns would serve.
+//
+// Merge semantics (https://github.com/namecoin/proposals/blob/master/ifa-0001.md#import):
+//   - The imported record provides DEFAULTS; the importer's own items
+//     override, including items with an explicit value of null (the spec
+//     counts a present-but-null item as present for precedence).
+//   - Multiple imports apply in the order listed: the importer's own items
+//     take ultimate precedence, then the first import's items, then the
+//     second's, and so on.
+//   - Plain objects (incl. `map` trees) merge key-by-key; scalars and
+//     arrays override wholesale. (The spec text frames precedence per
+//     top-level item but defers to per-item-type merge rules; key-by-key
+//     object merging matches what resolvers do with nested `map` data.)
+//   - A subdomain selector ["d/foo", "a.b"] imports only that subtree of
+//     the target's (already import-resolved) record: labels walk the `map`
+//     tree in reverse (DNS) order, falling back to "*" per label; a miss
+//     fails that import edge only.
+//   - The `import` key itself never appears in the merged result.
+//
+// Robustness: memoized per call, with a chain-based cycle guard (circular
+// chains resolve best-effort: the closing edge contributes nothing) and a
+// hard depth cap, mirroring resolveFilterTags in the summary builder.
+// Missing / expired / unreadable / unselectable imports contribute nothing
+// and surface a per-edge warning. Pure w.r.t. inputs: nothing is mutated.
+// ---------------------------------------------------------------------------
+
+const IMPORT_RESOLVE_MAX_DEPTH = 16;
+
+function _isPlainObject(v) {
+	return v != null && typeof v === "object" && !Array.isArray(v);
+}
+
+// Deep-merge `overlay` onto `base`: `base` supplies defaults, `overlay`
+// wins. Two plain objects merge key-by-key (recursively); anything else
+// (scalar, array, null, mismatched types) is replaced by `overlay`
+// wholesale. Returns a fresh value; neither input is mutated.
+function mergeImportedValue(base, overlay) {
+	if (_isPlainObject(base) && _isPlainObject(overlay)) {
+		const out = Object.assign({}, base);
+		for (const [k, v] of Object.entries(overlay)) {
+			out[k] = Object.prototype.hasOwnProperty.call(out, k)
+				? mergeImportedValue(out[k], v)
+				: v;
+		}
+		return out;
+	}
+	return overlay;
+}
+
+// Walk a resolved record's `map` tree per a subdomain selector. Labels
+// process in reverse (DNS) order; a missing label retries as "*" before
+// failing. A string leaf substitutes to { ip: [str] } per the spec's `map`
+// value shorthand. Returns { ok: true, value } or { ok: false }.
+function _applyImportSelector(value, selector) {
+	const labels = String(selector).split(".").filter((l) => l.length > 0);
+	let cur = value;
+	for (let i = labels.length - 1; i >= 0; i--) {
+		if (!_isPlainObject(cur) || !_isPlainObject(cur.map)) return { ok: false };
+		const child = cur.map[labels[i]];
+		if (_isPlainObject(child) || typeof child === "string") {
+			cur = child;
+		} else {
+			const wild = cur.map["*"];
+			if (_isPlainObject(wild) || typeof wild === "string") cur = wild;
+			else return { ok: false };
+		}
+	}
+	if (typeof cur === "string") cur = { ip: [cur] };
+	return { ok: true, value: cur };
+}
+
+// Default fetcher: name_show via the module-local RPC wrapper, decoding the
+// JSON value. Returns { status, parsed? } with status one of
+// "ok" | "missing" | "expired" | "unreadable"; throws only on transient
+// RPC errors (callers turn those into "error" edges).
+async function _defaultImportFetchName(name) {
+	let row;
+	try {
+		row = await nameShow(name);
+	} catch (e) {
+		if (isAuthoritativeAbsentError(e)) return { status: "missing" };
+		throw e;
+	}
+	if (!row || row.value == null) return { status: "missing" };
+	if (row.expired) return { status: "expired" };
+	if (row.value_encoding === "hex") return { status: "unreadable" };
+	let parsed;
+	try {
+		parsed = JSON.parse(String(row.value));
+	} catch {
+		return { status: "unreadable" };
+	}
+	if (!_isPlainObject(parsed)) return { status: "unreadable" };
+	return { status: "ok", parsed };
+}
+
+// Resolve the root-level `import` references of an already-parsed name
+// value into a single effective record.
+//
+//   resolveNameImports(parsedValue, {
+//     fetchName,   // async (name) => { status: "ok", parsed } | { status:
+//                  //   "missing" | "expired" | "unreadable" }; injectable
+//                  //   for tests, defaults to name_show via RPC
+//     maxDepth,    // recursion cap (default 16, as resolveFilterTags)
+//     name,        // root name (optional): sharper cycle detection and
+//                  //   clearer warnings
+//   })
+//
+// Returns:
+//   {
+//     effective: <object>,          // merged value; no root "import" key
+//     imports: [ { name, selector, status, warning, contribution } ],
+//     warnings: [ <string>, ... ],  // flat, nested edges carry name context
+//     malformed: <bool>,            // root `import` field was malformed
+//     mapLevelImports: <bool>,      // value ALSO has imports under `map`
+//                                   // (detected, NOT merged)
+//   }
+// `contribution` is the value that edge merged in (post-selector), or null
+// when the edge failed. Edge status: "ok" | "missing" | "expired" |
+// "unreadable" | "cycle" | "depth-cap" | "selector-miss" | "error".
+async function resolveNameImports(parsedValue, options = {}) {
+	const fetchName = options.fetchName || _defaultImportFetchName;
+	const maxDepth = typeof options.maxDepth === "number" ? options.maxDepth : IMPORT_RESOLVE_MAX_DEPTH;
+	const rootName = typeof options.name === "string" ? options.name : null;
+	const memo = new Map();
+	const chain = new Set(rootName ? [rootName] : []);
+	const warnings = [];
+
+	// Resolve an imported name's FULL record (own items merged over its own
+	// imports). Memoized by name; the chain set guards cycles on the current
+	// resolution path and is checked BEFORE the memo so an in-flight name
+	// can never be awaited circularly. Warnings travel in the return value
+	// ({ status, value, warning }) so each edge gets attributed correctly
+	// even on memo hits; resolveObject collects them into the flat list.
+	async function resolveName(name, depth) {
+		if (chain.has(name)) {
+			return { status: "cycle", value: null, warning: "import cycle detected; edge ignored (best-effort resolution)" };
+		}
+		if (depth >= maxDepth) {
+			return { status: "depth-cap", value: null, warning: `import depth cap ${maxDepth} reached; edge ignored` };
+		}
+		if (memo.has(name)) return memo.get(name);
+		const p = (async () => {
+			let fetched;
+			try {
+				fetched = await fetchName(name);
+			} catch (e) {
+				return { status: "error", value: null, warning: `fetch failed: ${e && e.message ? e.message : e}` };
+			}
+			if (!fetched || fetched.status !== "ok") {
+				const st = fetched && fetched.status ? fetched.status : "missing";
+				const why = st === "missing" ? "import target not found" : (st === "expired" ? "import target expired" : "value not readable as a JSON object");
+				return { status: st, value: null, warning: `${why}; contributes nothing` };
+			}
+			chain.add(name);
+			try {
+				const inner = await resolveObject(fetched.parsed, depth, name);
+				return { status: "ok", value: inner.effective, warning: null };
+			} finally {
+				chain.delete(name);
+			}
+		})();
+		memo.set(name, p);
+		return p;
+	}
+
+	// Merge one parsed record: own items (minus `import`) over the resolved
+	// imports, folded forward (each import provides defaults under what is
+	// already accumulated) so earlier imports take precedence per the
+	// spec's ordering rule. `contextName` labels warnings.
+	async function resolveObject(parsed, depth, contextName) {
+		const { imports, malformed } = parseImports(parsed);
+		if (malformed) {
+			warnings.push(`${contextName}: malformed import field; ignored`);
+		}
+		const own = {};
+		for (const [k, v] of Object.entries(parsed)) {
+			if (k !== "import") own[k] = v;
+		}
+		const edges = [];
+		let effective = own;
+		// Fold FORWARD: each import supplies defaults UNDER everything
+		// accumulated so far, yielding own > import[0] > import[1] > ...
+		// exactly the spec's precedence order.
+		for (let i = 0; i < imports.length; i++) {
+			const imp = imports[i];
+			const resolved = await resolveName(imp.name, depth + 1);
+			const edge = {
+				name: imp.name,
+				selector: imp.selector,
+				status: resolved.status,
+				warning: resolved.warning || null,
+				contribution: null,
+			};
+			if (resolved.status === "ok") {
+				let contribution = resolved.value;
+				if (imp.selector) {
+					const sel = _applyImportSelector(resolved.value, imp.selector);
+					if (sel.ok) {
+						contribution = sel.value;
+					} else {
+						edge.status = "selector-miss";
+						edge.warning = `selector "${imp.selector}" matched no subdomain subtree; contributes nothing`;
+						contribution = null;
+					}
+				}
+				if (contribution != null) {
+					edge.contribution = contribution;
+					effective = mergeImportedValue(contribution, effective);
+				}
+			}
+			if (edge.warning) warnings.push(`${imp.name}: ${edge.warning}`);
+			edges.push(edge);
+		}
+		return { effective, edges };
+	}
+
+	const root = await resolveObject(_isPlainObject(parsedValue) ? parsedValue : {}, 0, rootName || "(root)");
+	const mapLevelImports = collectAllImports(parsedValue).some((e) => e.path.length > 0);
+	return {
+		effective: root.effective,
+		imports: root.edges,
+		warnings,
+		malformed: parseImports(parsedValue).malformed,
+		mapLevelImports,
+	};
+}
+
+// ---------------------------------------------------------------------------
 // NameID / Nostr identity detection.
 //
 // NameID spec (id/<name> records): https://nameid.org
@@ -2379,6 +2613,8 @@ module.exports = {
 	namespaceLabel,
 	parseImports,
 	collectAllImports,
+	resolveNameImports,
+	mergeImportedValue,
 	isHex64,
 	npubFromHex,
 	parseNostrIdentities,
