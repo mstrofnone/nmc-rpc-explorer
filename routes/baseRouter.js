@@ -1609,6 +1609,13 @@ router.get("/address/:address", asyncHandler(async (req, res, next) => {
 		res.locals.paginationBaseUrl = `./address/${address}?sort=${sort}`;
 		res.locals.transactions = [];
 		res.locals.addressApiSupport = addressApi.getCurrentAddressApiFeatureSupport();
+
+		// Namecoin: name-op decorations for the tx list. Initialized empty so
+		// the view can reference them unconditionally; filled below once the
+		// verbose txs are loaded (skipped entirely for crawler bots, which
+		// never load transactions).
+		res.locals.nameOpsByTxid = {};
+		res.locals.nameOpsTotal = 0;
 		
 		res.locals.result = {};
 
@@ -1786,6 +1793,37 @@ router.get("/address/:address", asyncHandler(async (req, res, next) => {
 						}
 
 						res.locals.blockHeightsByTxid = blockHeightsByTxid;
+
+						// Namecoin: decorate any tx in the visible page that carries a
+						// name operation, so the address tx list shows the same inline
+						// badge + expanded name-op panel as mempool-transactions and
+						// next-block. Verbose txs carry the data on
+						// `vout[].scriptPubKey.nameOp` already -- just collect it.
+						// Without this, e.g. an address whose only tx is a name_new
+						// commitment showed no trace of name activity on /address/<a>.
+						try {
+							const ops = nameApi.collectNameOps(res.locals.transactions || []);
+							for (const op of ops) {
+								const row = {
+									op: op.op,
+									txid: op.txid,
+									vout: typeof op.vout === "number" ? op.vout : null,
+									name: op.name || null,
+									name_encoding: op.name_encoding || null,
+									namespace: op.name ? nameApi.splitNamespace(op.name) : null,
+									value: op.value || null,
+									value_encoding: op.value_encoding || null,
+									valueRender: nameApi.renderNameValue(op.value, op.value_encoding),
+									hash: op.hash || null,
+									rand: op.rand || null,
+								};
+								if (!res.locals.nameOpsByTxid[op.txid]) res.locals.nameOpsByTxid[op.txid] = [];
+								res.locals.nameOpsByTxid[op.txid].push(row);
+							}
+						} catch (e) {
+							utils.logError("addressTxNameOps01", e);
+						}
+						res.locals.nameOpsTotal = Object.values(res.locals.nameOpsByTxid).reduce((n, arr) => n + arr.length, 0);
 					}
 				}
 			}, perfResults));

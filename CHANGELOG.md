@@ -1,3 +1,17 @@
+##### nmc-3.6.65
+###### 2026-09-28
+
+**Address pages now show name operations on the transaction list.**
+mempool-transactions, next-block, and the per-tx page already decorated
+transactions carrying name ops with an inline badge next to the txid
+plus an expanded name-op panel (op type, name link when revealed,
+decoded value, pre-image hash for name_new); /address/<addr> never
+populated the decoration, so an address whose only activity was a name
+operation - e.g. a lone name_new commitment - showed no trace of name
+activity anywhere on the page. The address handler now runs the same
+collectNameOps pass over the visible page of transactions and feeds it
+to the shared tx-list mixin.
+
 ##### nmc-3.6.64
 ###### 2026-09-27
 
