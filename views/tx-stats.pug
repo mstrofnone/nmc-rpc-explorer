@@ -141,6 +141,14 @@ block content
 								span.small.ms-1 /min
 							.small.text-muted last 144 blocks (~24h)
 
+						if (nameTxStats.currencyTxExcludingCoinbaseCount !== undefined)
+							.col-md-3.col-6.mb-3
+								div.text-muted.text-uppercase.small
+									span Currency txs excl. coinbase / 24h
+									+metricInfoBadge("<b>Currency txs excluding coinbase</b><br/>Plain NMC transfers with no name operation outputs and no coinbase input. This removes miner payouts from the existing currency transaction metric.<br/><br/><b>How it's calculated</b><br/>A transaction counts only when none of its <code>vout[].scriptPubKey</code> entries has a <code>nameOp</code> and none of its <code>vin</code> entries has a <code>coinbase</code> property. The rate is <code>currencyTxExcludingCoinbaseCount / windowSeconds × 60</code> over the same last-144-block window.<br/><br/><b>How to read it</b><br/>• Compare this with Currency txs / 24h to see transaction activity after removing miner payouts.<br/>• The existing Currency txs and Total txs metrics are unchanged and still include coinbase transactions.")
+								.lead= nameTxStats.currencyTxExcludingCoinbaseCount.toLocaleString()
+								.small.text-muted #{(nameTxStats.currencyTxExcludingCoinbaseRate * 60).toFixed(2)} /min, excluding miner payouts
+
 						.col-md-3.col-6.mb-3
 							div.text-muted.text-uppercase.small
 								span Total txs / 24h

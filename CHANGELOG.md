@@ -1,3 +1,36 @@
+##### nmc-3.6.66
+###### 2026-11-08
+
+**Add cumulative block timing statistics and a visual new-block cue.**
+The Latest Blocks table retains its per-gap Poisson probability and adds
+a cumulative value for the probability of mining at least the displayed
+number of blocks within their combined elapsed time. The calculation
+supports both block-list orders and leaves the oldest visible block as
+N/A. The homepage now checks the tip independently of the halving
+countdown, shows an accessible alert with a link to each new tip, and
+temporarily outlines Latest Blocks. The initial page tip stays silent,
+and blocked audio cannot suppress the visual cue.
+
+**Add currency transaction activity excluding miner payouts to /tx-stats.**
+The existing 144-block scan now also counts decoded transactions with no
+name operation output and no coinbase input, and exposes the new count
+and rate through /api/names/tx-stats. Existing total, name, and currency
+fields retain their prior definitions.
+
+**Add signed raw transaction broadcasting at /broadcast.**
+The form and POST /api/tx/broadcast endpoint accept 60 to 100,000 bytes
+of transaction data, validate its hexadecimal encoding and structure,
+and call testmempoolaccept before sendrawtransaction. Requests require
+JSON, the application CSRF token, and the same origin. Per-IP throttling
+applies even where the global limiter is skipped, and RPC failures are
+returned and logged without credentials or raw transaction contents.
+
+**Update /api/docs for Namecoin and document the POST broadcast action.**
+The documentation uses Namecoin Explorer, Namecoin Core, and NMC
+terminology for the active chain APIs. Legacy quote and holiday
+endpoints use neutral descriptions rather than misidentifying their
+curated data as Namecoin-specific content.
+
 ##### nmc-3.6.65
 ###### 2026-09-28
 

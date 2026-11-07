@@ -1,0 +1,104 @@
+extends layout
+
+block headContent
+	title Broadcast Transaction
+
+block content
+	+pageTitle("Broadcast Transaction")
+
+	+dismissableInfoAlert("broadcastTransactionNoteDismissed", "About transaction broadcasting...")
+		p Paste a signed raw #{coinConfig.name} transaction in hexadecimal form. The node checks it with testmempoolaccept before attempting to broadcast it.
+		p.mb-0 Broadcasting is irreversible. Only submit a transaction that you intended to sign.
+
+	.card.shadow-sm
+		.card-body
+			form(id="broadcast-transaction-form", data-api-url=`${config.baseUrl}api/tx/broadcast`)
+				.mb-3
+					label.form-label(for="raw-transaction") Signed raw transaction (hex)
+					textarea.form-control.font-monospace(id="raw-transaction", rows="9", required, spellcheck="false", autocomplete="off", maxlength=(config.transactionBroadcast.maxRawTransactionBytes * 2), aria-describedby="raw-transaction-help")
+					.form-text(id="raw-transaction-help") The transaction must contain 60 to #{config.transactionBroadcast.maxRawTransactionBytes.toLocaleString("en-US")} bytes of binary data. Surrounding whitespace is ignored.
+
+				button.btn.btn-primary.w-100(type="submit", id="broadcast-transaction-submit") Validate and broadcast
+
+			noscript
+				.alert.alert-warning.mt-3.mb-0 This tool requires JavaScript to submit the transaction safely.
+
+	#broadcast-transaction-result.mt-3(aria-live="polite")
+
+block endOfBody
+	script.
+		(function() {
+			const form = document.getElementById("broadcast-transaction-form");
+			const input = document.getElementById("raw-transaction");
+			const submitButton = document.getElementById("broadcast-transaction-submit");
+			const resultContainer = document.getElementById("broadcast-transaction-result");
+			const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+
+			function showResult(success, message, txid) {
+				const alert = document.createElement("div");
+				alert.className = "alert " + (success ? "alert-success" : "alert-danger");
+				alert.setAttribute("role", success ? "status" : "alert");
+
+				const messageElement = document.createElement("div");
+				messageElement.textContent = message;
+				alert.appendChild(messageElement);
+
+				if (txid) {
+					const link = document.createElement("a");
+					link.className = "alert-link font-monospace text-break";
+					link.href = "./tx/" + encodeURIComponent(txid);
+					link.textContent = txid;
+					alert.appendChild(link);
+				}
+
+				resultContainer.replaceChildren(alert);
+			}
+
+			form.addEventListener("submit", async function(event) {
+				event.preventDefault();
+				resultContainer.replaceChildren();
+				submitButton.disabled = true;
+
+				try {
+					if (!csrfMeta || !csrfMeta.content) {
+						throw new Error("Security token unavailable. Reload the page and try again.");
+					}
+
+					const response = await fetch(form.dataset.apiUrl, {
+						method: "POST",
+						credentials: "same-origin",
+						headers: {
+							"Accept": "application/json",
+							"Content-Type": "application/json",
+							"X-CSRF-Token": csrfMeta.content
+						},
+						body: JSON.stringify({rawTransaction: input.value.trim()})
+					});
+
+					let data;
+					try {
+						data = await response.json();
+					} catch {
+						throw new Error("The server returned an unexpected response. Reload the page and try again.");
+					}
+
+					if (!response.ok || !data.success) {
+						const message = (data && typeof data.error === "string")
+							? data.error
+							: "The transaction could not be broadcast.";
+						showResult(false, message);
+						return;
+					}
+
+					input.value = "";
+					showResult(true, "Transaction broadcast successfully. Transaction ID:", data.txid);
+				} catch (error) {
+					const message = (error && typeof error.message === "string")
+						? error.message
+						: "The transaction could not be broadcast.";
+					showResult(false, message);
+				} finally {
+					submitButton.disabled = false;
+				}
+			});
+		})();
