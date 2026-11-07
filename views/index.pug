@@ -132,18 +132,24 @@ block content
 
 
 		if (latestBlocks)
-			.d-flex.justify-content-between
-				div
-					+sectionTitle("Latest Blocks")
+			#index-new-block-alert.alert.alert-success.d-none(role="status", aria-live="polite", aria-atomic="true")
+				i.bi-check-circle-fill.me-2
+				span New block detected:&nbsp;
+				a#index-new-block-link.alert-link(href="#")
 
-				div
-					a.small.ms-2(href="./blocks") Browse blocks &raquo;
+			#index-latest-blocks.rounded
+				.d-flex.justify-content-between
+					div
+						+sectionTitle("Latest Blocks")
 
-			+contentSection
-				- var blocks = latestBlocks;
-				- var blockOffset = 0;
+					div
+						a.small.ms-2(href="./blocks") Browse blocks &raquo;
 
-				include includes/blocks-list.pug
+				+contentSection
+					- var blocks = latestBlocks;
+					- var blockOffset = 0;
+
+					include includes/blocks-list.pug
 							
 
 		+contentSection("Tools")
@@ -154,6 +160,9 @@ block endOfBody
 	script.
 		var audio = new Audio('./audio/609335__kenneth_cooney__levelup.wav');
 		var tipInfo = null;
+		var tipPollTimer = null;
+		var tipPollInFlight = false;
+		var latestBlocksHighlightTimer = null;
 
 		function refreshHalvingCountdownUI() {
 			$.get("./snippet/index-halving-countdown", function(data) {
@@ -162,17 +171,85 @@ block endOfBody
 			});
 		}
 
-		function checkHalvingCountdown() {
-			$.get("./api/blocks/tip", function(data) {
-				if (data.height > tipInfo.height) {
-					tipInfo = data;
+		function showNewBlockCue(data) {
+			var link = $("#index-new-block-link");
+			link.attr("href", "./block/" + encodeURIComponent(data.hash));
+			link.attr("title", "View block " + data.hash);
+			link.text("#" + Number(data.height).toLocaleString());
+			$("#index-new-block-alert").removeClass("d-none");
 
-					audio.play();
+			var latestBlocks = $("#index-latest-blocks");
+			latestBlocks.addClass("border border-success");
+			if (latestBlocksHighlightTimer !== null) {
+				clearTimeout(latestBlocksHighlightTimer);
+			}
+			latestBlocksHighlightTimer = setTimeout(function() {
+				latestBlocks.removeClass("border border-success");
+				latestBlocksHighlightTimer = null;
+			}, 10000);
+		}
 
-					refreshHalvingCountdownUI();
+		function playNewBlockSound() {
+			try {
+				var playResult = audio.play();
+				if (playResult && typeof playResult.catch === "function") {
+					playResult.catch(function() {});
+				}
+			} catch {
+				// Audio can be blocked by browser autoplay policy. The visual cue
+				// has already been shown and must remain independent of playback.
+			}
+		}
+
+		function scheduleNextTipPoll() {
+			if (tipPollTimer !== null) {
+				return;
+			}
+
+			tipPollTimer = setTimeout(function() {
+				tipPollTimer = null;
+				checkBlockTip();
+			}, 3000);
+		}
+
+		function startBlockTipPolling() {
+			if (tipPollInFlight || tipPollTimer !== null) {
+				return;
+			}
+
+			checkBlockTip();
+		}
+
+		function checkBlockTip() {
+			if (tipPollInFlight) {
+				return;
+			}
+
+			tipPollInFlight = true;
+			$.getJSON("./api/blocks/tip", function(data) {
+				if (!data || !Number.isFinite(Number(data.height)) || typeof data.hash !== "string" || data.hash.length === 0) {
+					return;
 				}
 
-				console.log(tipInfo);
+				var newTip = {height: Number(data.height), hash: data.hash};
+				if (tipInfo === null) {
+					tipInfo = newTip;
+					return;
+				}
+
+				if (newTip.height > tipInfo.height || newTip.hash !== tipInfo.hash) {
+					tipInfo = newTip;
+					showNewBlockCue(newTip);
+
+					if ($("#index-halving-countdown-wrapper").length) {
+						refreshHalvingCountdownUI();
+					}
+
+					playNewBlockSound();
+				}
+			}).always(function() {
+				tipPollInFlight = false;
+				scheduleNextTipPoll();
 			});
 		}
 
@@ -270,14 +347,10 @@ block endOfBody
 				});
 			}
 
-			$.get("./api/blocks/tip", function(data) {
-				tipInfo = data;
-			});
-
 			if ($("#index-halving-countdown-wrapper").length) {
 				refreshHalvingCountdownUI();
-
-				setInterval(checkHalvingCountdown, 3000);
 			}
+
+			startBlockTipPolling();
 		});
 		

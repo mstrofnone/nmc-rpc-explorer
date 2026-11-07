@@ -251,7 +251,9 @@ if (process.env.BTCEXP_BASIC_AUTH_PASSWORD) {
 // uncomment after placing your favicon in /public
 //expressApp.use(favicon(__dirname + '/public/favicon.ico'));
 //expressApp.use(logger('dev'));
-expressApp.use(bodyParser.json());
+// Bound JSON input while allowing the 200,000 hex characters needed by a
+// maximum-size standard transaction submitted to /api/tx/broadcast.
+expressApp.use(bodyParser.json({limit: config.transactionBroadcast.jsonBodyLimit}));
 expressApp.use(bodyParser.urlencoded({ extended: false }));
 
 
@@ -876,6 +878,7 @@ async function refreshNameTxStats() {
 		const startedAt = Date.now();
 		let totalTx = 0;
 		let nameTx = 0;
+		let currencyTxExcludingCoinbase = 0;
 		const opCounts = { name_new: 0, name_firstupdate: 0, name_update: 0 };
 		let earliestTime = null;
 		let latestTime = null;
@@ -894,17 +897,12 @@ async function refreshNameTxStats() {
 			for (const tx of block.tx) {
 				if (typeof tx === "string") { totalTx++; continue; }
 				totalTx++;
-				let hasNameOp = false;
-				if (Array.isArray(tx.vout)) {
-					for (const out of tx.vout) {
-						const no = out && out.scriptPubKey && out.scriptPubKey.nameOp;
-						if (no && no.op) {
-							hasNameOp = true;
-							if (opCounts[no.op] !== undefined) opCounts[no.op]++;
-						}
-					}
+				const txClass = nameApi.classifyNameTx(tx);
+				for (const op of txClass.nameOps) {
+					if (opCounts[op] !== undefined) opCounts[op]++;
 				}
-				if (hasNameOp) nameTx++;
+				if (txClass.hasNameOp) nameTx++;
+				if (txClass.isCurrencyExcludingCoinbase) currencyTxExcludingCoinbase++;
 			}
 		}
 		const elapsedMs = Date.now() - startedAt;
@@ -919,10 +917,12 @@ async function refreshNameTxStats() {
 			totalTxCount: totalTx,
 			nameTxCount: nameTx,
 			currencyTxCount: Math.max(totalTx - nameTx, 0),
+			currencyTxExcludingCoinbaseCount: currencyTxExcludingCoinbase,
 			opCounts,
 			nameTxFraction: totalTx > 0 ? nameTx / totalTx : 0,
 			nameTxRate: nameTx / windowSeconds,
 			currencyTxRate: Math.max(totalTx - nameTx, 0) / windowSeconds,
+			currencyTxExcludingCoinbaseRate: currencyTxExcludingCoinbase / windowSeconds,
 			scannedAt: Date.now(),
 			elapsedMs,
 		};

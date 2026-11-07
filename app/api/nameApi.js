@@ -2054,6 +2054,34 @@ async function reconstructNameHistory(name, { coreApi = null, maxSteps = 5000 } 
 }
 
 // ---------------------------------------------------------------------------
+// classifyNameTx(tx)
+//
+// Classify one decoded transaction for refreshNameTxStats in app.js. Keep the
+// legacy nameTx decision based on op-bearing outputs, while separately tracking
+// every nameOp payload for the stricter non-name, non-coinbase currency metric.
+// ---------------------------------------------------------------------------
+function classifyNameTx(tx) {
+	const nameOps = [];
+	let hasNameOpOutput = false;
+	if (tx && Array.isArray(tx.vout)) {
+		for (const out of tx.vout) {
+			const no = out && out.scriptPubKey && out.scriptPubKey.nameOp;
+			if (!no) continue;
+			hasNameOpOutput = true;
+			if (no.op) nameOps.push(no.op);
+		}
+	}
+	const isCoinbase = Boolean(tx && Array.isArray(tx.vin) && tx.vin.some((input) => input && input.coinbase !== undefined));
+	return {
+		nameOps,
+		hasNameOp: nameOps.length > 0,
+		hasNameOpOutput,
+		isCoinbase,
+		isCurrencyExcludingCoinbase: !hasNameOpOutput && !isCoinbase,
+	};
+}
+
+// ---------------------------------------------------------------------------
 // getRecentNameFirstUpdates({ windowBlocks, listCap, perBlockCap })
 //
 // Walks the last `windowBlocks` blocks (default 2016 ≈ 2 weeks at 10 min/block,
@@ -2770,6 +2798,7 @@ module.exports = {
 	collectNameOps,
 	renderNameValue,
 	splitNamespace,
+	classifyNameTx,
 	getRecentNameFirstUpdates,
 	getOldestActiveNames,
 	reconstructNameHistory,

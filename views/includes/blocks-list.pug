@@ -1,3 +1,9 @@
+- var displayedBlocks = blocks.filter((block, blockIndex) => block && ((sort == "desc" && (blockIndex < blocks.length - 1 || block.height == 0)) || (sort == "asc" && (block.height == 0 || blockIndex > 0))));
+- var cumulativePoissonValues = utils.cumulativePoissonData(displayedBlocks, sort);
+- var cumulativePoissonByHeight = {};
+each cumulativeBlock, cumulativeBlockIndex in displayedBlocks
+	- cumulativePoissonByHeight[cumulativeBlock.height] = cumulativePoissonValues[cumulativeBlockIndex];
+
 .table-responsive
 	table.table.table-borderless.table-striped.mb-0
 		thead
@@ -14,6 +20,9 @@
 
 				th.text-end.text-card-highlight.fw-normal.text-uppercase.d-none.d-sm-table-cell
 					span.border-dotted(title="<b>Poisson probability</b><br/>Probability that at least one block would have been mined within this block's actual time-to-mine (the gap to the previous block), given the target 10-minute interval: <code>P(N ≥ 1) = 1 − e<sup>−Δt/600s</sup></code>, where Δt is the inter-block gap. High percentages mean this block was 'overdue' relative to its predecessor; low percentages mean it arrived quickly.", data-bs-toggle="tooltip", data-bs-html="true") λ
+
+				th.text-end.text-card-highlight.fw-normal.text-uppercase.d-none.d-sm-table-cell
+					span.border-dotted(title="<b>Cumulative Poisson probability</b><br/>Probability that at least <code>k</code> blocks would have been mined since the oldest displayed block, given the target 10-minute interval: <code>λ = Δt/600s</code> and <code>P(N ≥ k) = 1 − e<sup>−λ</sup> Σ<sub>i=0</sub><sup>k−1</sup>(λ<sup>i</sup>/i!)</code>. Here <code>k</code> is the number of displayed inter-block intervals and Δt is their total elapsed time. Negative timestamp gaps count as 0 seconds. The oldest displayed block has no elapsed interval and is shown as N/A.", data-bs-toggle="tooltip", data-bs-html="true") Σλ
 				
 				th.text-end.text-card-highlight.fw-normal.text-uppercase.d-none.d-sm-table-cell
 					span.border-dotted(title="<b>Time To Mine</b><br/>The time it took to mine this block after the previous block. <span class='text-success'>Fast</span> blocks (< 5min) and <span class='text-danger'>Slow</span> blocks (> 15min) are highlighted.", data-bs-toggle="tooltip", data-bs-html="true") TTM
@@ -122,6 +131,18 @@
 									small.border-dotted.text-muted(title="Not applicable: genesis block has no previous block to compare to.", data-bs-toggle="tooltip") N/A
 								else
 									small.border-dotted.text-muted(title="Not applicable: previous block is not in this page of results.", data-bs-toggle="tooltip") -
+
+						td.text-end.d-none.d-sm-table-cell
+							- var cumulativePoisson = cumulativePoissonByHeight[block.height];
+							if (cumulativePoisson)
+								- var cumulativePoissonPct = (cumulativePoisson.probability * 100).toFixed(1);
+								- var intervalNoun = cumulativePoisson.intervalCount == 1 ? "interval" : "intervals";
+								span.border-dotted(title=`Since oldest displayed block: ${cumulativePoisson.elapsedSeconds}s across ${cumulativePoisson.intervalCount} ${intervalNoun}; λ = ${cumulativePoisson.lambda.toFixed(6)}; P(N ≥ ${cumulativePoisson.intervalCount}) = ${cumulativePoissonPct}%`, data-bs-toggle="tooltip") #{cumulativePoissonPct}%
+							else
+								if (block.height == 0)
+									small.border-dotted.text-muted(title="Not applicable: genesis is the oldest displayed block, so no displayed inter-block interval has elapsed.", data-bs-toggle="tooltip") N/A (genesis)
+								else
+									small.border-dotted.text-muted(title="Not applicable: no cumulative value is available from the oldest displayed block.", data-bs-toggle="tooltip") N/A
 
 						td.text-end.d-none.d-sm-table-cell
 							if (timeDiff)

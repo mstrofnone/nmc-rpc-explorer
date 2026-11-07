@@ -129,6 +129,17 @@ module.exports = {
 		windowMaxRequests: process.env.BTCEXP_RATE_LIMIT_WINDOW_MAX_REQUESTS || 200
 	},
 
+	transactionBroadcast: {
+		rateLimitWindowMinutes: 15,
+		rateLimitMaxRequests: 10,
+		// A maximum-size standard transaction occupies 200,000 hex characters.
+		// Keep the global JSON envelope bounded while leaving room for that hex,
+		// its property name, and surrounding JSON whitespace.
+		jsonBodyLimit: "256kb",
+		maxRawTransactionBytes: 100000,
+		minRawTransactionBytes: 60
+	},
+
 	// Onion-Location header (Tor Browser ".onion available" pill).
 	// Set BTCEXP_ONION_LOCATION to the full onion URL of this explorer,
 	// e.g. http://abc...xyz.onion:8080/ -- Tor Browser will then show the
@@ -288,7 +299,7 @@ module.exports = {
 		//- empty `items` list, which the Tools dropdown / Tools card simply skip.
 		toolSections: [
 			{name: "Basics", items: [0, 2]},
-			{name: "Mempool", items: [4, 16, 5]},
+			{name: "Mempool", items: [4, 16, 5, 22]},
 			{name: "Analysis", items: [9, 18, 10, 11, 12, 3, 20]},
 			{name: "Technical", items: [15, 6, 7, 1]},
 			{name: "Fun", items: (currentCoin === "BTC") ? [8, 17, 19, 13] : []},
@@ -336,6 +347,8 @@ module.exports = {
 	/* 20 */	{name:"Next Halving", url:"./next-halving", desc:"Estimated details about the next halving.", iconClass:"bi-square-half"},
 
 	/* 21 */	{name:"NFT Files", url:"./nft", desc:`Files stored on the ${coins[currentCoin].name} blockchain as chunked nft/* name updates. Includes a reconstruction howto.`, iconClass:"bi-archive"},
+
+	/* 22 */	{name:"Broadcast Transaction", url:"./broadcast", desc:`Validate and broadcast a signed raw ${coins[currentCoin].name} transaction.`, iconClass:"bi-broadcast"},
 	]
 };
 

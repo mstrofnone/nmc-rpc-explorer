@@ -1749,6 +1749,98 @@ function trackAppEvent(name, count=1, params=null) {
 	}
 }
 
+// Return P(N >= intervalCount) for a Poisson process with the supplied
+// expected event count. The lower-tail form is used when it is numerically
+// stable; otherwise sum the upper tail to avoid cancelling a tiny probability
+// against 1. Both forms evaluate the same distribution.
+function poissonAtLeast(lambda, intervalCount) {
+	if (!Number.isFinite(lambda) || lambda < 0 || !Number.isInteger(intervalCount) || intervalCount < 0) {
+		return null;
+	}
+
+	if (intervalCount == 0) {
+		return 1;
+	}
+
+	if (lambda == 0) {
+		return 0;
+	}
+
+	if (lambda > intervalCount) {
+		let term = Math.exp(-lambda);
+		let cumulativeProbability = term;
+
+		for (let i = 1; i < intervalCount; i++) {
+			term *= lambda / i;
+			cumulativeProbability += term;
+		}
+
+		return Math.max(0, Math.min(1, 1 - cumulativeProbability));
+	}
+
+	// Start at P(N = intervalCount), then sum P(N = k) for larger k.
+	// Calculating the first term in log space avoids premature underflow.
+	let logTerm = -lambda;
+	for (let i = 1; i <= intervalCount; i++) {
+		logTerm += Math.log(lambda / i);
+	}
+
+	let term = Math.exp(logTerm);
+	let probability = term;
+	for (let i = intervalCount + 1; term > 0; i++) {
+		term *= lambda / i;
+		probability += term;
+
+		if (term <= probability * Number.EPSILON) {
+			break;
+		}
+	}
+
+	return Math.max(0, Math.min(1, probability));
+}
+
+// Build cumulative Poisson data for visible blocks in either display order.
+// The oldest block is the zero-interval baseline and therefore has no value.
+// Each later entry describes all displayed intervals from that baseline.
+function cumulativePoissonData(blocks, sort) {
+	const result = new Array(Array.isArray(blocks) ? blocks.length : 0).fill(null);
+	if (!Array.isArray(blocks) || blocks.length < 2) {
+		return result;
+	}
+
+	const ascending = (sort == "asc");
+	const chronologicalBlocks = ascending ? blocks : blocks.slice().reverse();
+	let elapsedSeconds = 0;
+	let validTimestamps = true;
+
+	for (let i = 1; i < chronologicalBlocks.length; i++) {
+		const previousBlock = chronologicalBlocks[i - 1];
+		const currentBlock = chronologicalBlocks[i];
+		const previousTime = previousBlock == null ? NaN : Number(previousBlock.time);
+		const currentTime = currentBlock == null ? NaN : Number(currentBlock.time);
+
+		if (validTimestamps && Number.isFinite(previousTime) && Number.isFinite(currentTime)) {
+			elapsedSeconds += Math.max(0, Math.floor(currentTime - previousTime));
+
+		} else {
+			validTimestamps = false;
+		}
+
+		const outputIndex = ascending ? i : (blocks.length - 1 - i);
+		if (validTimestamps) {
+			const lambda = elapsedSeconds / 600;
+			result[outputIndex] = {
+				probability: poissonAtLeast(lambda, i),
+				lambda: lambda,
+				elapsedSeconds: elapsedSeconds,
+				intervalCount: i
+			};
+		}
+	}
+
+	return result;
+}
+
 // pMap(items, fn, { concurrency }) — bounded-parallel async .map().
 // Returns the results in INPUT ORDER, regardless of completion order.
 // Errors propagate (the first rejection wins, like Promise.all). Pass
@@ -1780,6 +1872,8 @@ async function pMap(items, fn, { concurrency = 8 } = {}) {
 }
 
 module.exports = {
+	poissonAtLeast: poissonAtLeast,
+	cumulativePoissonData: cumulativePoissonData,
 	pMap: pMap,
 	reflectPromise: reflectPromise,
 	redirectToConnectPageIfNeeded: redirectToConnectPageIfNeeded,

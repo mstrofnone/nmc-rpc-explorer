@@ -14,6 +14,7 @@ const hexEnc = require("crypto-js/enc-hex");
 const { bech32, bech32m } = require("bech32");
 const Decimal = require("decimal.js");
 const asyncHandler = require("express-async-handler");
+const { rateLimit } = require("express-rate-limit");
 const markdown = require("markdown-it")();
 
 const coins = require("./../app/coins.js");
@@ -27,6 +28,99 @@ const xyzpubApi = require("./../app/api/xyzpubApi.js");
 const rpcApi = require("./../app/api/rpcApi.js");
 const apiDocs = require("./../docs/api.js");
 const btcQuotes = require("./../app/coins/btcQuotes.js");
+
+const broadcastRateLimiter = rateLimit({
+	windowMs: config.transactionBroadcast.rateLimitWindowMinutes * 60 * 1000,
+	limit: config.transactionBroadcast.rateLimitMaxRequests,
+	standardHeaders: "draft-7",
+	legacyHeaders: false,
+	handler: function(req, res) {
+		res.status(429).json({
+			success: false,
+			error: "Too many transaction broadcast attempts. Please try again later."
+		});
+	}
+});
+
+function broadcastRequestGuard(req, res, next) {
+	if (!req.is("application/json")) {
+		res.status(415).json({
+			success: false,
+			error: "Content-Type must be application/json."
+		});
+
+		return;
+	}
+
+	const fetchSite = req.get("sec-fetch-site");
+	if (fetchSite && fetchSite.toLowerCase() !== "same-origin") {
+		res.status(403).json({success: false, error: "Cross-origin transaction broadcasting is not allowed."});
+
+		return;
+	}
+
+	const origin = req.get("origin");
+	if (origin) {
+		try {
+			const requestOrigin = new URL(`${req.protocol}://${req.get("host")}`).origin;
+			if (new URL(origin).origin !== requestOrigin) {
+				res.status(403).json({success: false, error: "Cross-origin transaction broadcasting is not allowed."});
+
+				return;
+			}
+		} catch {
+			res.status(403).json({success: false, error: "Invalid request origin."});
+
+			return;
+		}
+	}
+
+	next();
+}
+
+function validateRawTransaction(rawTransaction) {
+	if (typeof rawTransaction !== "string") {
+		return {error: "rawTransaction must be a hexadecimal string."};
+	}
+
+	const normalizedHex = rawTransaction.trim();
+	const maxHexLength = config.transactionBroadcast.maxRawTransactionBytes * 2;
+
+	if (normalizedHex.length > maxHexLength) {
+		return {
+			status: 413,
+			error: `Raw transaction exceeds the ${config.transactionBroadcast.maxRawTransactionBytes.toLocaleString("en-US")}-byte limit.`
+		};
+	}
+
+	if (!/^[0-9a-fA-F]+$/.test(normalizedHex) || normalizedHex.length % 2 !== 0) {
+		return {error: "Raw transaction must be a non-empty, even-length hexadecimal string."};
+	}
+
+	if (normalizedHex.length < config.transactionBroadcast.minRawTransactionBytes * 2) {
+		return {error: "Raw transaction is too short to be valid."};
+	}
+
+	try {
+		const transaction = bitcoinjs.Transaction.fromHex(normalizedHex);
+		if (transaction.ins.length === 0 || transaction.outs.length === 0) {
+			return {error: "Raw transaction must contain at least one input and one output."};
+		}
+	} catch {
+		return {error: "Raw transaction hex could not be decoded."};
+	}
+
+	return {hex: normalizedHex.toLowerCase()};
+}
+
+function mempoolRejectionReason(acceptance) {
+	const reason = acceptance && acceptance["reject-reason"];
+	if (typeof reason === "string" && reason.trim()) {
+		return reason.replace(/[\r\n\t]+/g, " ").trim().substring(0, 300);
+	}
+
+	return "The node did not accept the transaction.";
+}
 
 
 
@@ -156,6 +250,86 @@ router.get("/block/header/:hashOrHeight", asyncHandler(async (req, res, next) =>
 
 
 /// TRANSACTIONS
+
+router.post("/tx/broadcast", broadcastRateLimiter, broadcastRequestGuard, asyncHandler(async (req, res, next) => {
+	const validation = validateRawTransaction(req.body && req.body.rawTransaction);
+	if (validation.error) {
+		res.status(validation.status || 400).json({success: false, error: validation.error});
+
+		next();
+		return;
+	}
+
+	let acceptanceResults;
+	try {
+		acceptanceResults = await rpcApi.getRpcDataWithParams({
+			method: "testmempoolaccept",
+			parameters: [[validation.hex]]
+		});
+	} catch {
+		// RPC errors can include the full raw transaction and RPC credentials.
+		// Keep those values out of persistent logs and the in-memory error ledger.
+		utils.logError("broadcastTxValidation", new Error("testmempoolaccept RPC failed; sensitive details suppressed."));
+		res.status(502).json({
+			success: false,
+			error: "The node could not validate the transaction. Please try again later."
+		});
+
+		next();
+		return;
+	}
+
+	if (!Array.isArray(acceptanceResults) || acceptanceResults.length !== 1
+		|| !acceptanceResults[0] || typeof acceptanceResults[0].allowed !== "boolean") {
+		utils.logError("broadcastTxValidationResponse", new Error("Unexpected testmempoolaccept response."));
+		res.status(502).json({
+			success: false,
+			error: "The node returned an unexpected validation response."
+		});
+
+		next();
+		return;
+	}
+
+	const acceptance = acceptanceResults[0];
+	if (!acceptance.allowed) {
+		res.status(422).json({
+			success: false,
+			error: `Transaction validation failed: ${mempoolRejectionReason(acceptance)}`
+		});
+
+		next();
+		return;
+	}
+
+	try {
+		const txid = await rpcApi.getRpcDataWithParams({
+			method: "sendrawtransaction",
+			parameters: [validation.hex]
+		});
+
+		if (typeof txid !== "string" || !/^[0-9a-fA-F]{64}$/.test(txid)) {
+			utils.logError("broadcastTxResponse", new Error("Unexpected sendrawtransaction response."));
+			res.status(502).json({
+				success: false,
+				error: "The node returned an unexpected broadcast response."
+			});
+
+			next();
+			return;
+		}
+
+		res.json({success: true, txid: txid});
+	} catch {
+		utils.logError("broadcastTxSend", new Error("sendrawtransaction RPC failed; sensitive details suppressed."));
+		res.status(502).json({
+			success: false,
+			error: "The node could not broadcast the transaction. It may already be known or may no longer be valid."
+		});
+	}
+
+	next();
+}));
 
 router.get("/tx/:txid", asyncHandler(async (req, res, next) => {
 	let txid = utils.asHash(req.params.txid);

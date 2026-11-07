@@ -44,6 +44,15 @@ module.exports = {
 		// transactions
 		{
 			"category":"transactions",
+			"method":"POST",
+			"url":"/tx/broadcast",
+			"desc":"Validates a signed raw Namecoin transaction with testmempoolaccept, then broadcasts it with sendrawtransaction only when accepted. Requires an application/json request from this origin and the app's CSRF token in the X-CSRF-Token header. Each IP is limited to 10 attempts per 15 minutes.",
+			"requestBody": {
+				"rawTransaction":"Signed raw transaction in hexadecimal form, from 60 to 100,000 bytes of binary data."
+			}
+		},
+		{
+			"category":"transactions",
 			"url":"/tx/$TXID",
 			"desc":"Returns the details of the transaction with the given txid.",
 			"testUrl": "/tx/f4184fc596403b9d638783cf57adfe4c75c605f6356fbc91338530e9831e9e16"
@@ -63,7 +72,7 @@ module.exports = {
 		{
 			"category":"blockchain",
 			"url":"/blockchain/coins",
-			"desc":"Returns the current supply of Bitcoin. An estimate using a checkpoint can be returned in 2 cases: on 'slow' devices, and before the UTXO Set snapshot is loaded."
+			"desc":"Returns the current supply of Namecoin. An estimate using a checkpoint can be returned in 2 cases: on 'slow' devices, and before the UTXO Set snapshot is loaded."
 		},
 		{
 			"category":"blockchain",
@@ -179,12 +188,12 @@ module.exports = {
 		{
 			"category":"mempool",
 			"url":"/mempool/count",
-			"desc":"Returns the number of transactions in Bitcoin Core's mempool."
+			"desc":"Returns the number of transactions in Namecoin Core's mempool."
 		},
 		{
 			"category":"mempool",
 			"url":"/mempool/summary",
-			"desc":"Returns a summary of Bitcoin Core's mempool (full output from 'getmempoolinfo')",
+			"desc":"Returns a summary of Namecoin Core's mempool (full output from 'getmempoolinfo')",
 			"example": {"loaded":true,"size":225,"bytes":76209,"usage":410496,"total_fee":0.01763495,"maxmempool":15000000,"mempoolminfee":0.00001,"minrelaytxfee":0.00001,"unbroadcastcount":0}
 		},
 		{
@@ -200,7 +209,7 @@ module.exports = {
 		{
 			"category":"price",
 			"url":"/price",
-			"desc":"Returns the price of 1 BTC, in USD, EUR, GBP, and XAU",
+			"desc":"Returns the price of 1 NMC, in USD, EUR, GBP, and XAU",
 			"optionalParams": {
 				"format":"Set to 'true' to include thousands-separator formatting in results"
 			}
@@ -208,7 +217,7 @@ module.exports = {
 		{
 			"category":"price",
 			"url":"/price/marketcap",
-			"desc":"Returns the market cap of Bitcoin, in USD, EUR, GBP, XAU",
+			"desc":"Returns the market cap of Namecoin, in USD, EUR, GBP, XAU",
 		},
 		{
 			"category":"price",
@@ -223,28 +232,28 @@ module.exports = {
 		{
 			"category":"fun",
 			"url":"/quotes/all",
-			"desc":"Returns the full curated list of Bitcoin quotes.",
+			"desc":"Returns the full curated list of quotes.",
 		},
 		{
 			"category":"fun",
 			"url":"/quotes/$INDEX",
-			"desc":"Returns the Bitcoin quote with the given index from the curated list.",
+			"desc":"Returns the quote with the given index from the curated list.",
 			"testUrl": "/quotes/0"
 		},
 		{
 			"category":"fun",
 			"url":"/quotes/random",
-			"desc":"Returns a random Bitcoin quote from the curated list."
+			"desc":"Returns a random quote from the curated list."
 		},
 		{
 			"category":"fun",
 			"url":"/holidays/all",
-			"desc":"Returns the full curated list of Bitcoin Holidays."
+			"desc":"Returns the full curated list of holidays."
 		},
 		{
 			"category":"fun",
 			"url":"/holidays/today",
-			"desc":"Returns the Bitcoin Holidays celebrated 'today' (i.e. at the time the API call is made).",
+			"desc":"Returns the holidays celebrated 'today' (i.e. at the time the API call is made).",
 			"optionalParams": {
 				"tzOffset":"The number of hours to offset from UTC for the caller's local timezone, e.g. \"-5\" for EST"
 			},
@@ -253,7 +262,7 @@ module.exports = {
 		{
 			"category":"fun",
 			"url":"/holidays/$DAY",
-			"desc":"Returns the Bitcoin Holidays celebrated on the specified day, using one of the following formats: yyyy-MM-DD, MM-DD.",
+			"desc":"Returns the holidays celebrated on the specified day, using one of the following formats: yyyy-MM-DD, MM-DD.",
 			"testUrl": "/holidays/01-03"
 		},
 

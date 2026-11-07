@@ -2448,6 +2448,12 @@ router.get("/tools", function(req, res, next) {
 	next();
 });
 
+router.get("/broadcast", function(req, res, next) {
+	res.render("broadcast");
+
+	next();
+});
+
 router.get("/changelog", function(req, res, next) {
 	res.locals.changelogHtml = markdown.render(global.changelogMarkdown);
 
