@@ -1,6 +1,6 @@
 {
 	"name": "nmc-rpc-explorer",
-	"version": "3.6.66",
+	"version": "3.6.67",
 	"description": "Open-source, self-hosted Namecoin/Bitcoin explorer (fork of btc-rpc-explorer)",
 	"private": false,
 	"bin": "bin/cli.js",
@@ -31,18 +31,18 @@
 		"url": "git+https://github.com/janoside/btc-rpc-explorer.git"
 	},
 	"dependencies": {
-		"@janoside/app-utils": "github:janoside/app-utils#ba4c23d3f",
+		"@janoside/app-utils": "github:janoside/app-utils#ba4c23d3fcfb5d6eb9f5de951bf47e046e03b281",
 		"async": "^3.2.6",
-		"axios": "^1.11.0",
+		"axios": "^1.21.1",
 		"basic-auth": "^2.0.1",
 		"bech32": "2.0.0",
 		"bip32": "^4.0.0",
-		"bitcoinjs-lib": "^6.1.7",
-		"body-parser": "^2.2.0",
+		"bitcoinjs-lib": "^6.1.10",
+		"body-parser": "^2.4.0",
 		"bootstrap": "^5.3.7",
 		"bs58check": "^4.0.0",
 		"chart.js": "^4.5.0",
-		"compression": "^1.8.1",
+		"compression": "^1.8.2",
 		"cookie-parser": "^1.4.7",
 		"crypto-js": "^4.2.0",
 		"csurf": "^1.11.0",
@@ -50,19 +50,19 @@
 		"decimal.js": "^10.6.0",
 		"dotenv": "^13.0.1",
 		"electrum-client": "github:janoside/electrum-client",
-		"express": "^4.21.2",
+		"express": "^4.22.3",
 		"express-async-handler": "^1.2.0",
-		"express-rate-limit": "^8.0.1",
+		"express-rate-limit": "^8.7.4",
 		"express-session": "^1.18.2",
-		"jayson": "^4.2.0",
+		"jayson": "^5.0.0",
 		"lru-cache": "^10.4.3",
-		"markdown-it": "^14.1.0",
+		"markdown-it": "^14.3.3",
 		"md5": "^2.3.0",
 		"memorystore": "^1.6.7",
 		"meow": "^9.0.0",
-		"moment": "^2.30.1",
+		"moment": "^2.31.0",
 		"moment-duration-format": "^2.3.2",
-		"morgan": "^1.10.1",
+		"morgan": "^1.12.1",
 		"on-headers": "^1.1.0",
 		"pidusage": "^4.0.1",
 		"pug": "^3.0.3",
@@ -70,7 +70,7 @@
 		"redis": "^4.7.1",
 		"semver": "^7.7.2",
 		"serve-favicon": "^2.5.1",
-		"simple-git": "^3.28.0",
+		"simple-git": "^4.0.2",
 		"tiny-secp256k1": "^2.2.4",
 		"zeromq": "^6.5.0"
 	},
@@ -80,5 +80,22 @@
 	"devDependencies": {
 		"eslint": "^9.34.0",
 		"sass": "^1.90.0"
+	},
+	"overrides": {
+		"@janoside/app-utils": {
+			"simple-git": "^4.0.2"
+		},
+		"csurf": {
+			"cookie": "^0.7.2"
+		}
+	},
+	"engines": {
+		"node": ">=20.19.0"
+	},
+	"pnpm": {
+		"overrides": {
+			"@janoside/app-utils>simple-git": "^4.0.2",
+			"csurf>cookie": "^0.7.2"
+		}
 	}
 }

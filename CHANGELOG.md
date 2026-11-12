@@ -1,3 +1,29 @@
+##### nmc-3.6.67
+###### 2026-11-12
+
+**Remediate known dependency vulnerabilities across the runtime and build
+trees.** Update axios, bitcoinjs-lib, body-parser, compression, Express,
+express-rate-limit, jayson, markdown-it, moment, morgan, simple-git, and
+their transitive dependencies to patched releases. This covers published
+denial-of-service, SSRF and proxy-credential exposure, prototype-pollution,
+log-injection, client-IP spoofing and rate-limit bypass, command-injection,
+and Merkle-node duplication advisories. Presence of an advisory does not
+imply every affected API was reachable in this application.
+
+**Refresh and constrain transitive security fixes.** Express now resolves
+proxy-addr 2.0.8 and body-parser 1.20.9 internally. Scoped overrides resolve
+app-utils' unused simple-git dependency to the same patched 4.0.2 runtime
+used by the explorer, and csurf's cookie serializer to 0.7.2. The full
+npm shrinkwrap and pnpm lockfile refresh also updates the AWS, WebSocket,
+and development dependency trees while dropping superseded XML,
+stream-json, and uuid packages. Full and production-only audits with both
+npm and pnpm report zero known vulnerabilities after the update.
+
+**Adapt to simple-git 4 and make the runtime floor explicit.** Use its named
+simpleGit export when loading the latest commit for the footer. Node 20.19 or newer is now declared, matching production and the patched
+jayson and AWS dependency lines. Existing unit, focused regression, broadcast-safety,
+startup-API, syntax, and clean-install checks pass.
+
 ##### nmc-3.6.66
 ###### 2026-11-08
 
