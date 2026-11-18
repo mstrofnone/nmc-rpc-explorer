@@ -1,3 +1,13 @@
+##### nmc-3.6.68
+###### 2026-11-19
+
+**Fix /mempool-summary when the node mempool is empty.** Fee-rate bucket
+compaction no longer indexes bucket -1 when there is no transaction weight.
+The internal build endpoint now also returns a JSON error response if summary
+construction fails, rather than leaving reverse-proxy requests unfinished.
+Empty and non-empty summaries retain the existing response shape, and the
+regression suite covers both the core API and HTTP routes.
+
 ##### nmc-3.6.66
 ###### 2026-11-08
 
